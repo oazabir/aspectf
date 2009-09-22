@@ -170,6 +170,7 @@ namespace AspectF
                 try
                 {
                     work();
+                    return;
                 }
                 catch (Exception x)
                 {
