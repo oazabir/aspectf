@@ -3,19 +3,21 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Diagnostics;
+using Moq;
 
 namespace AspectF
 {
     class SampleClass
     {
+        private ILogger logger = new Mock<ILogger>().Object;
                 
         public void InsertCustomerTheEasyWay(string firstName, string lastName, int age,
             Dictionary<string, string> attributes)
         {
             AspectF.Define
-                .Log(Logger.Writer, "Inserting customer the easy way")
-                .HowLong(Logger.Writer, "Starting customer insert", "Inserted customer in {1} seconds")
-                .Retry()
+                .Log(logger, "Inserting customer the easy way")
+                .HowLong(logger, "Starting customer insert", "Inserted customer in {1} seconds")
+                .Retry(logger)
                 .Do(() =>
                     {
                         CustomerData data = new CustomerData();

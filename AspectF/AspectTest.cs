@@ -5,32 +5,46 @@ using System.Text;
 using System.IO;
 using System.Threading;
 using Xunit;
+using Moq;
 
 namespace AspectF
 {
     public class AspectTest
     {
+        private Mock<ILogger> MockLoggerForException(params Exception[] exceptions)
+        {
+            var logger = new Mock<ILogger>();
+            foreach (var x in exceptions)
+                logger.Expect(l => l.LogException(x)).Verifiable();
+            return logger;
+        }
+
         [Fact]
         public void TestRetry()
         {
             bool result = false;
             bool exceptionThrown = false;
 
+            var ex = new ApplicationException("Test exception");
+            var mockLoggerForException = MockLoggerForException(ex);
+                    
             Assert.DoesNotThrow(() =>
-            {
-                AspectF.Define.Retry().Do(() =>
                 {
-                    if (!exceptionThrown)
+                    AspectF.Define.Retry(mockLoggerForException.Object).Do(() =>
                     {
-                        exceptionThrown = true;
-                        throw new ApplicationException("Test exception");
-                    }
-                    else
-                    {
-                        result = true;
-                    }
+                        if (!exceptionThrown)
+                        {
+                            exceptionThrown = true;
+                            throw ex;
+                        }
+                        else
+                        {
+                            result = true;
+                        }
+                    });
+
                 });
-            });
+            mockLoggerForException.VerifyAll();
 
             Assert.True(exceptionThrown, "Assert.Retry did not invoke the function at all");
             Assert.True(result, "Assert.Retry did not retry the function after exception was thrown");
@@ -44,23 +58,26 @@ namespace AspectF
             DateTime secondCallAt = DateTime.Now;
             bool exceptionThrown = false;
 
+            var ex = new ApplicationException("Test exception");
+            var logger = MockLoggerForException(ex);
             Assert.DoesNotThrow(() =>
-            {
-                AspectF.Define.Retry(5000).Do(() =>
                 {
-                    if (!exceptionThrown)
+                    AspectF.Define.Retry(5000, logger.Object).Do(() =>
                     {
-                        firstCallAt = DateTime.Now;
-                        exceptionThrown = true;
-                        throw new ApplicationException("Test exception");
-                    }
-                    else
-                    {
-                        secondCallAt = DateTime.Now;
-                        result = true;
-                    }
+                        if (!exceptionThrown)
+                        {
+                            firstCallAt = DateTime.Now;
+                            exceptionThrown = true;
+                            throw ex;
+                        }
+                        else
+                        {
+                            secondCallAt = DateTime.Now;
+                            result = true;
+                        }
+                    });
                 });
-            });
+            logger.VerifyAll();
 
             Assert.True(exceptionThrown, "Assert.Retry did not invoke the function at all");
             Assert.True(result, "Assert.Retry did not retry the function after exception was thrown");
@@ -78,37 +95,44 @@ namespace AspectF
             bool expectedExceptionFound = false;
             bool allRetryFailed = false;
 
+            var ex1 = new ApplicationException("First exception");
+            var ex2 = new ApplicationException("Second exception");
+            var ex3 = new ApplicationException("Third exception");
+
+            var logger = MockLoggerForException(ex1, ex2, ex3);
             Assert.DoesNotThrow(() =>
-            {
-                AspectF.Define.Retry(5000, 2,
-                    x => { expectedExceptionFound = x is ApplicationException; },
-                    () => { allRetryFailed = true; })
-                    .Do(() =>
+                {
+                    AspectF.Define.Retry(5000, 2,
+                        x => { expectedExceptionFound = (x == ex1 || x == ex2 || x == ex3); },
+                        errors => { allRetryFailed = true; },
+                        logger.Object)
+                        .Do(() =>
                     {
                         if (!exceptionThrown)
                         {
                             firstCallAt = DateTime.Now;
                             exceptionThrown = true;
-                            throw new ApplicationException("First exception");
+                            throw ex1;
                         }
                         else if (!firstRetry)
                         {
                             secondCallAt = DateTime.Now;
                             firstRetry = true;
-                            throw new ApplicationException("Second exception");
+                            throw ex2;
                         }
                         else if (!secondRetry)
                         {
                             secondRetry = true;
-                            throw new ApplicationException("Third exception");
+                            throw ex3;
                         }
                     });
-            });
+                });
+            logger.VerifyAll();
 
             Assert.True(exceptionThrown, "Assert.Retry did not invoke the function at all");
             Assert.True(firstRetry, "Assert.Retry did not retry the function after exception was thrown");
             Assert.True(secondRetry, "Assert.Retry did not retry the function second time after exception was thrown");
-            Assert.InRange<Double>((secondCallAt - firstCallAt).TotalSeconds, 4.9d, 5.1d);
+            Assert.InRange<Double>((secondCallAt - firstCallAt).TotalSeconds, 4.9d, 5.1d); 
             Assert.True(allRetryFailed, "Assert.Retry did not call the final fail handler");
         }
 
@@ -152,54 +176,14 @@ namespace AspectF
                 AspectF.Define
                     .MustBeNonNull(1, DateTime.Now, string.Empty, null, "Hello", new object())
                     .Do(() =>
-                    {
-                        result = true;
-                    });
-
-                Assert.True(result, "Assert.MustBeNonNull must not call the function when there's a null parameter");
-            });
-
-        }
-
-        [Fact]
-        public void TestMustBeNonDefaultWithValidParameters()
-        {
-            bool result = false;
-
-            Assert.DoesNotThrow(delegate
-            {
-                AspectF.Define
-                .MustBeNonDefault<int>(1).MustBeNonDefault<DateTime>(DateTime.Now)
-                .MustBeNonDefault<string>("Hello")
-                .Do(delegate
                 {
                     result = true;
                 });
+
+                Assert.True(result, "Assert.MustBeNonNull must not call the function when there's a null parameter");
             });
-
-            Assert.True(result, "Assert.MustBeNonDefault did not call the function although all parameters were non-null");
+            
         }
-
-        [Fact]
-        public void TestMustBeNonDefaultWithInvalidParameters()
-        {
-            bool result = false;
-
-            Assert.Throws(typeof(ArgumentException), delegate
-            {
-                AspectF.Define
-                    .MustBeNonDefault<int>(default(int)).MustBeNonDefault<DateTime>(default(DateTime))
-                    .MustBeNonDefault<string>(default(string), "Hello")
-                    .Do(() =>
-                    {
-                        result = true;
-                    });
-
-                Assert.True(result, "Assert.MustBeNonDefault must not call the function when there's a null parameter");
-            });
-
-        }
-
 
         [Fact]
         public void TestUntil()
@@ -211,7 +195,7 @@ namespace AspectF
                 .Until(() =>
                 {
                     counter--;
-
+                    
                     Assert.InRange<int>(counter, 0, 9);
 
                     return counter == 0;
@@ -235,7 +219,7 @@ namespace AspectF
                 .While(() =>
                 {
                     counter--;
-
+                    
                     Assert.InRange(counter, 0, 9);
 
                     return counter > 0;
@@ -257,10 +241,10 @@ namespace AspectF
                 () => 1 == 1,
                 () => null == null,
                 () => 1 > 0)
-                .Do(() =>
-                {
-                    callbackFired = true;
-                });
+                .Do(() => 
+                    {
+                        callbackFired = true;
+                    });
 
             Assert.True(callbackFired, "Assert.WhenTrue did not fire callback although all conditions were true");
 
@@ -269,10 +253,10 @@ namespace AspectF
                 () => 1 == 0, // fail
                 () => null == null,
                 () => 1 > 0)
-                .Do(() =>
-                {
-                    callbackFired2 = true;
-                });
+                .Do(() => 
+                    {
+                        callbackFired2 = true;
+                    });
 
             Assert.False(callbackFired2, "Assert.WhenTrue did not fire callback although all conditions were true");
         }
@@ -280,81 +264,87 @@ namespace AspectF
         [Fact]
         public void TestLog()
         {
-            StringBuilder buffer = new StringBuilder();
-            StringWriter writer = new StringWriter(buffer);
-
+            var categories = new string[] { "Category1", "Category2" };
+            var logger1 = new Mock<ILogger>();
+            logger1.Expect(l => l.Log(categories, "Test Log 1")).Verifiable();
             // Attempt 1: Test one time logging
-            AspectF.Define.Log(writer, "Test Log 1").Do(AspectExtensions.DoNothing);
-
-            string logOutput = buffer.ToString();
-            Assert.True(logOutput.Contains("Test Log 1"), "Assert.Log did not produce the right log message");
-
-            DateTime dateOutputResult;
-            Assert.True(DateTime.TryParse(logOutput.Substring(0, logOutput.IndexOf('\t')), out dateOutputResult),
-                "Assert.Log did not produce date time in the beginning of log");
+            AspectF.Define
+                .Log(logger1.Object, categories, "Test Log 1")
+                .Do(AspectExtensions.DoNothing);
+            logger1.Verify();
 
             // Attempt 2: Test before and after logging
-            buffer.Length = 0;
-            AspectF.Define.Log(writer, "Before Log", "After Log")
+            var logger2 = new Mock<ILogger>();
+            logger2.Expect(l => l.Log(categories, "Before Log")).Verifiable();
+            logger2.Expect(l => l.Log(categories, "After Log")).Verifiable();
+            AspectF.Define
+                .Log(logger2.Object, categories, "Before Log", "After Log")
                 .Do(AspectExtensions.DoNothing);
-
-            int expectedContentLength =
-                DateTime.Now.ToUniversalTime().ToString().Length + "\t".Length + "Before Log".Length + Environment.NewLine.Length +
-                DateTime.Now.ToUniversalTime().ToString().Length + "\t".Length + "After Log".Length + Environment.NewLine.Length;
-            Assert.Equal(expectedContentLength, buffer.Length);
+            logger2.VerifyAll();
         }
 
         [Fact]
         public void TestRetryAndLog()
         {
-            StringBuilder buffer = new StringBuilder();
-            StringWriter writer = new StringWriter(buffer);
-
             // Attempt 1: Test log and Retry together
             bool exceptionThrown = false;
             bool retried = false;
-            AspectF.Define.Log(writer, "TestRetryAndLog").Retry()
-                .Do(() =>
+            
+            var ex = new ApplicationException("First exception thrown which should be ignored");
+            var logger = MockLoggerForException(ex);
+            logger.Expect(l => l.Log("TestRetryAndLog"));
+
+            AspectF.Define
+                .Log(logger.Object, "TestRetryAndLog")
+                .Retry(logger.Object)
+                .Do(() => 
+            {
+                if (!exceptionThrown)
                 {
-                    if (!exceptionThrown)
-                    {
-                        exceptionThrown = true;
-                        throw new ApplicationException("First exception thrown which should be ignored");
-                    }
-                    else
-                    {
-                        retried = true;
-                    }
-                });
+                    exceptionThrown = true;
+                    throw ex;
+                }
+                else
+                {
+                    retried = true;
+                }
+            });
+            logger.VerifyAll();
 
             Assert.True(exceptionThrown, "Aspect.Retry did not call the function at all");
             Assert.True(retried, "Aspect.Retry did not retry when exception was thrown first time");
-            Assert.True(buffer.ToString().EndsWith("TestRetryAndLog" + Environment.NewLine));
-
+         
             // Attempt 2: Test Log Before and After with Retry together            
-            AspectF.Define.Log(writer, "BeforeLog", "AfterLog").Retry()
+            var logger2 = MockLoggerForException(ex);
+            logger2.Expect(l => l.Log("BeforeLog"));
+            logger2.Expect(l => l.Log("AfterLog"));
+
+            exceptionThrown = false;
+            AspectF.Define
+                .Log(logger2.Object, "BeforeLog", "AfterLog")
+                .Retry(logger2.Object)
                 .Do(() =>
                 {
                     if (!exceptionThrown)
                     {
                         exceptionThrown = true;
-                        throw new ApplicationException("First exception thrown which should be ignored");
+                        throw ex;
                     }
                     else
                     {
                         retried = true;
                     }
                 });
-
+            logger2.VerifyAll();
         }
 
         [Fact]
         public void TestAspectReturn()
         {
             int result = AspectF.Define.Return<int>(() =>
-            {
-                return 1;
-            });
+                {
+                    return 1;
+                });
 
             Assert.Equal(1, result);
         }
@@ -362,17 +352,19 @@ namespace AspectF
         [Fact]
         public void TestAspectReturnWithOtherAspects()
         {
-            StringWriter writer = new StringWriter(new StringBuilder());
+            var logger = new Mock<ILogger>();
+            logger.Expect(l => l.Log("Test Logging")).Verifiable();
 
             int result = AspectF.Define
-                .Log(writer, "Test Logging")
-                .Retry(2)
+                .Log(logger.Object, "Test Logging")
+                .Retry(2, new Mock<ILogger>().Object)
                 .MustBeNonNull(1, DateTime.Now, string.Empty)
                 .Return<int>(() =>
                 {
                     return 1;
                 });
 
+            logger.VerifyAll();
             Assert.Equal(1, result);
         }
 
@@ -382,25 +374,23 @@ namespace AspectF
             bool callExecutedImmediately = false;
             bool callbackFired = false;
             AspectF.Define.RunAsync().Do(() =>
-            {
-                callbackFired = true;
-                Assert.True(callExecutedImmediately, 
-                    "Aspect.RunAsync Call did not execute asynchronously");
-            });
+                {
+                    callbackFired = true;
+                    Assert.True(callExecutedImmediately, "Aspect.RunAsync Call did not execute asynchronously");
+                });
             callExecutedImmediately = true;
+
             // wait until the async function completes
             while (!callbackFired) Thread.Sleep(100);
 
             bool callCompleted = false;
             bool callReturnedImmediately = false;
-            AspectF.Define.RunAsync(() => 
-                Assert.True(callCompleted, 
-                    "Aspect.RunAsync Callback did not fire after the call has completed properly"))
+            AspectF.Define.RunAsync(() => Assert.True(callCompleted, "Aspect.RunAsync Callback did not fire after the call has completed properly"))
                 .Do(() =>
-                {
-                    callCompleted = true;
-                    Assert.True(callReturnedImmediately, "Aspect.RunAsync call did not run asynchronously");
-                });
+                    {
+                        callCompleted = true;
+                        Assert.True(callReturnedImmediately, "Aspect.RunAsync call did not run asynchronously");
+                    });
             callReturnedImmediately = true;
 
             while (!callCompleted) Thread.Sleep(100);
@@ -409,50 +399,42 @@ namespace AspectF
         [Fact]
         public void TestTrapLog()
         {
-            StringBuilder buffer = new StringBuilder();
-            StringWriter writer = new StringWriter(buffer);
+            var exception = new ApplicationException("Parent Exception",
+                                new ApplicationException("Child Exception",
+                                    new ApplicationException("Grandchild Exception")));
+            var logger = new Mock<ILogger>();
+            logger.Expect(l => l.LogException(exception)).Verifiable();
 
             Assert.DoesNotThrow(() =>
-            {
-                AspectF.Define.TrapLog(writer).Do(() =>
                 {
-                    throw new ApplicationException("Parent Exception",
-                        new ApplicationException("Child Exception",
-                            new ApplicationException("Grandchild Exception")));
+                    AspectF.Define.TrapLog(logger.Object).Do(() =>
+                        {
+                            throw exception;
+                        });
                 });
-            });
-
-            string logOutput = buffer.ToString();
-
-            Assert.True(logOutput.Contains("Parent Exception"));
-            Assert.True(logOutput.Contains("Child Exception"));
-            Assert.True(logOutput.Contains("Grandchild Exception"));
+            logger.VerifyAll();            
         }
 
         [Fact]
         public void TestTrapLogThrow()
         {
-            StringBuilder buffer = new StringBuilder();
-            StringWriter writer = new StringWriter(buffer);
-
+            var exception = new ApplicationException("Parent Exception",
+                                new ApplicationException("Child Exception",
+                                    new ApplicationException("Grandchild Exception")));
+            var logger = MockLoggerForException(exception);
+            
             Assert.Throws(typeof(ApplicationException), () =>
             {
-                AspectF.Define.TrapLogThrow(writer).Do(() =>
+                AspectF.Define.TrapLogThrow(logger.Object).Do(() =>
                 {
-                    throw new ApplicationException("Parent Exception",
-                        new ApplicationException("Child Exception",
-                            new ApplicationException("Grandchild Exception")));
+                    throw exception;
                 });
             });
 
-            string logOutput = buffer.ToString();
-
-            Assert.True(logOutput.Contains("Parent Exception"));
-            Assert.True(logOutput.Contains("Child Exception"));
-            Assert.True(logOutput.Contains("Grandchild Exception"));
+            logger.VerifyAll();            
         }
     }
 
-
+    
 
 }
