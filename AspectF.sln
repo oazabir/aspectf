@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 10.00
 # Visual Studio 2008
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AspectF", "AspectF\AspectF.csproj", "{515CA4A0-60D8-4200-A2D3-4FA23CBBA704}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmarALZabir.AspectF", "AspectF\OmarALZabir.AspectF.csproj", "{515CA4A0-60D8-4200-A2D3-4FA23CBBA704}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

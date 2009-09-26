@@ -5,7 +5,7 @@ using System.Text;
 using System.Diagnostics;
 using Moq;
 
-namespace AspectF
+namespace OmarALZabir.AspectF
 {
     class SampleClass
     {

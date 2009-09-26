@@ -7,16 +7,150 @@ using System.Threading;
 using Xunit;
 using Moq;
 
-namespace AspectF
+namespace OmarALZabir.AspectF
 {
-    public class AspectTest
+    internal class AspectTest
     {
         private Mock<ILogger> MockLoggerForException(params Exception[] exceptions)
         {
             var logger = new Mock<ILogger>();
-            foreach (var x in exceptions)
-                logger.Expect(l => l.LogException(x)).Verifiable();
+            Queue<Exception> queue = new Queue<Exception>(exceptions);
+                
+            logger.Expect(l => l.LogException(It.Is<Exception>(x => x == queue.Dequeue()))).Verifiable();
             return logger;
+        }
+
+        [Fact]
+        public void TestCache()
+        {
+            var cacheResolver = new Mock<ICacheResolver>();
+            var key = "TestObject.Key";
+            var testObject = new TestObject 
+            { 
+                Age = 27, 
+                Name = "Omar AL Zabir", 
+                BirthDate = DateTime.Parse("9/5/1982") 
+            };
+
+            // Test 1. First attempt to call the cache will return the object as is and store it 
+            // in cache.
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(default(TestObject)).AtMostOnce().Verifiable();
+            cacheResolver.Expect(c => c.Put(
+                It.Is<string>(cacheKey => cacheKey == key), 
+                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
+                    .AtMostOnce().Verifiable();
+            
+            var result = AspectF.Define.Cache<TestObject>(cacheResolver.Object, key).Return(() => testObject);
+
+            cacheResolver.VerifyAll();
+            Assert.Same(testObject, result);
+
+            // Test 2. If object is in cache, it will return the object from cache, not the real object
+            var cacheResolver2 = new Mock<ICacheResolver>();
+            var cachedObject = new TestObject { Name = "Omar Cached" };
+            cacheResolver2.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(cachedObject).AtMostOnce().Verifiable();
+
+            var result2 = AspectF.Define.Cache<TestObject>(cacheResolver2.Object, key).Return(() => testObject);
+
+            Assert.Same(cachedObject, result2);
+        }
+
+        [Fact]
+        public void TestCacheWithRetryAndLog()
+        {
+            var cacheResolver = new Mock<ICacheResolver>();
+            var key = "TestObject.Key";
+            var testObject = new TestObject
+            {
+                Age = 27,
+                Name = "Omar AL Zabir",
+                BirthDate = DateTime.Parse("9/5/1982")
+            };
+
+            var ex = new ApplicationException("Some Exception");
+            var logger = MockLoggerForException(ex);
+            logger.Expect(l => l.Log("Log1")).AtMostOnce().Verifiable();
+
+            // Test 1. First attempt to call the cache will return the object as is and store it 
+            // in cache.
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(default(TestObject)).Verifiable();
+            cacheResolver.Expect(c => c.Put(
+                It.Is<string>(cacheKey => cacheKey == key),
+                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
+                    .AtMostOnce();
+
+            bool exceptionThrown = false;
+            var result = AspectF.Define
+                .Log(logger.Object, "Log1")
+                .Retry(logger.Object)
+                .Cache<TestObject>(cacheResolver.Object, key)                
+                .Return(() => 
+                    {
+                        if (!exceptionThrown)
+                        {
+                            exceptionThrown = true;
+                            throw ex;
+                        }
+                        else if (exceptionThrown)
+                        {
+                            return testObject;
+                        }
+                        else
+                        {
+                            Assert.True(false, "AspectF.Retry should not retry twice");
+                            return default(TestObject);
+                        }
+                    });
+            
+            logger.VerifyAll();
+            cacheResolver.VerifyAll();
+            Assert.Same(testObject, result);
+
+            // Test 2. If object is in cache, it will return the object from cache, not the real object
+            var cacheResolver2 = new Mock<ICacheResolver>();
+            var cachedObject = new TestObject { Name = "Omar Cached" };
+
+            exceptionThrown = false;
+            cacheResolver2.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(() =>
+                    {
+                        // Fail ICacheResolver.Get call on first attempt to simulate cache service
+                        // unavailability.
+                        if (!exceptionThrown)
+                        {
+                            exceptionThrown = true;
+                            throw ex;
+                        }
+                        else if (exceptionThrown)
+                        {
+                            return cachedObject;
+                        }
+                        else
+                        {
+                            throw new ApplicationException("ICacheResolver.Get should not be called thrice");
+                        }
+                    }).Verifiable();
+
+            var logger2 = new Mock<ILogger>();
+
+            // When ICacheResolver.Get is called, it will raise an exception on first attempt
+            logger2.Expect(l => l.LogException(It.Is<Exception>(x => object.Equals(x.InnerException, ex))))
+                .AtMostOnce().Verifiable();
+            logger2.Expect(l => l.Log("Log2"))
+                .AtMostOnce().Verifiable();
+
+            var result2 = AspectF.Define
+                .Log(logger2.Object, "Log2")
+                .Retry(logger2.Object)
+                .CacheRetry<TestObject>(cacheResolver2.Object, logger2.Object, key)                
+                .Return(() => testObject);
+
+            cacheResolver2.VerifyAll();
+            logger2.VerifyAll();
+            Assert.Same(cachedObject, result2);
         }
 
         [Fact]
@@ -37,9 +171,13 @@ namespace AspectF
                             exceptionThrown = true;
                             throw ex;
                         }
-                        else
+                        else if (exceptionThrown)
                         {
                             result = true;
+                        }
+                        else
+                        {
+                            Assert.True(false, "AspectF.Retry should not retry more than once");
                         }
                     });
 
@@ -70,17 +208,21 @@ namespace AspectF
                             exceptionThrown = true;
                             throw ex;
                         }
-                        else
+                        else if (exceptionThrown)
                         {
                             secondCallAt = DateTime.Now;
                             result = true;
+                        }
+                        else
+                        {
+                            Assert.True(false, "Aspect.Retry should not retry more than once.");
                         }
                     });
                 });
             logger.VerifyAll();
 
-            Assert.True(exceptionThrown, "Assert.Retry did not invoke the function at all");
-            Assert.True(result, "Assert.Retry did not retry the function after exception was thrown");
+            Assert.True(exceptionThrown, "AspectF.Retry did not invoke the function at all");
+            Assert.True(result, "AspectF.Retry did not retry the function after exception was thrown");
             Assert.InRange<Double>((secondCallAt - firstCallAt).TotalSeconds, 4.9d, 5.1d);
         }
 
@@ -124,6 +266,10 @@ namespace AspectF
                         {
                             secondRetry = true;
                             throw ex3;
+                        }
+                        else
+                        {
+                            Assert.True(false, "Aspect.Retry should not retry more than twice.");
                         }
                     });
                 });

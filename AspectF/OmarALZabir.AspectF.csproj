@@ -6,12 +6,14 @@
     <ProductVersion>9.0.30729</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{515CA4A0-60D8-4200-A2D3-4FA23CBBA704}</ProjectGuid>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>AspectF</RootNamespace>
+    <RootNamespace>OmarALZabir.AspectF</RootNamespace>
     <AssemblyName>AspectF</AssemblyName>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <StartupObject>
+    </StartupObject>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -55,13 +57,14 @@
   <ItemGroup>
     <Compile Include="AspectF.cs" />
     <Compile Include="AspectTest.cs" />
+    <Compile Include="ICacheResolver.cs" />
     <Compile Include="ILogger.cs" />
     <Compile Include="Logger.cs" />
-    <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SampleClass.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="TestObject.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

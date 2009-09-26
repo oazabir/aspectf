@@ -6,7 +6,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Collections;
 
-namespace AspectF
+namespace OmarALZabir.AspectF
 {
     /// <summary>
     /// AspectF
@@ -34,7 +34,12 @@ namespace AspectF
         /// <summary>
         /// Chain of aspects to invoke
         /// </summary>
-        public Action<Action> Chain = null;
+        internal Action<Action> Chain = null;
+
+        /// <summary>
+        /// The acrual work delegate that is finally called
+        /// </summary>
+        internal Delegate WorkDelegate;
 
         /// <summary>
         /// Create a composition of function e.g. f(g(x))
@@ -84,19 +89,22 @@ namespace AspectF
         [DebuggerStepThrough]
         public TReturnType Return<TReturnType>(Func<TReturnType> work)
         {
-            TReturnType returnValue = default(TReturnType);
+            this.WorkDelegate = work;
+
             if (this.Chain == null)
             {
                 return work();
             }
             else
             {
+                TReturnType returnValue = default(TReturnType);
                 this.Chain(() =>
                 {
-                    returnValue = work();
+                    Func<TReturnType> workDelegate = WorkDelegate as Func<TReturnType>;
+                    returnValue = workDelegate();
                 });
-            }
-            return returnValue;
+                return returnValue;
+            }            
         }
         
         /// <summary>
@@ -110,7 +118,7 @@ namespace AspectF
                 return new AspectF();
             }
         }
-    }
+    }   
     
     public static class AspectExtensions
     {
@@ -395,6 +403,66 @@ namespace AspectF
                 { 
                     work.EndInvoke(asyncresult); 
                 }, null));
+        }
+
+        public static AspectF Cache<TReturnType>(this AspectF aspect, 
+            ICacheResolver cacheResolver, string key)
+            where TReturnType: class
+        {            
+            return aspect.Combine((work) => 
+            {
+                Cache<TReturnType>(aspect, cacheResolver, key, work);
+            });
+        }
+
+        public static AspectF CacheRetry<TReturnType>(this AspectF aspect,
+            ICacheResolver cacheResolver, 
+            ILogger logger,
+            string key)
+            where TReturnType : class
+        {
+            return aspect.Combine((work) =>
+            {
+                try
+                {
+                    Cache<TReturnType>(aspect, cacheResolver, key, work);
+                }
+                catch (Exception x)
+                {
+                    logger.LogException(x);
+                    System.Threading.Thread.Sleep(1000);
+
+                    //Retry
+                    try
+                    {
+                        Cache<TReturnType>(aspect, cacheResolver, key, work);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogException(ex);
+                        throw ex;
+                    }
+                }
+            });
+        }
+
+        private static void Cache<TReturnType>(AspectF aspect, ICacheResolver cacheResolver, string key, Action work) where TReturnType : class
+        {
+            TReturnType cachedObject = cacheResolver.Get(key) as TReturnType;
+            if (cachedObject == null)
+            {
+                Func<TReturnType> workDelegate = aspect.WorkDelegate as Func<TReturnType>;
+                TReturnType realObject = workDelegate();
+                cacheResolver.Put(key, realObject);
+                workDelegate = () => realObject;
+                aspect.WorkDelegate = workDelegate;
+            }
+            else
+            {
+                aspect.WorkDelegate = new Func<TReturnType>(() => cachedObject);
+            }
+
+            work();
         }
     }
 }

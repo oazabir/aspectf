@@ -2,12 +2,12 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.IO;
 
 namespace OmarALZabir.AspectF
 {
-    internal class Logger 
+    public interface ICacheResolver
     {
-        public static readonly TextWriter Writer = Console.Out;
+        object Get(string key);
+        void Put(string key, object item);
     }
 }
