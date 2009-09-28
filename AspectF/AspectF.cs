@@ -407,7 +407,6 @@ namespace OmarALZabir.AspectF
 
         public static AspectF Cache<TReturnType>(this AspectF aspect, 
             ICacheResolver cacheResolver, string key)
-            where TReturnType: class
         {            
             return aspect.Combine((work) => 
             {
@@ -415,11 +414,32 @@ namespace OmarALZabir.AspectF
             });
         }
 
+        public static AspectF CacheList<TReturnType>(this AspectF aspect,
+            ICacheResolver cacheResolver, string listCacheKey, Func<TReturnType, string> getItemKey)
+        {
+            return aspect.Combine((work) =>
+            {
+                Func<IEnumerable<TReturnType>> workDelegate = aspect.WorkDelegate as Func<IEnumerable<TReturnType>>;
+                Func<IEnumerable<TReturnType>> newWorkDelegate = () =>
+                {
+                    IEnumerable<TReturnType> collection = workDelegate();
+                    foreach (TReturnType item in collection)
+                    {
+                        string key = getItemKey(item);
+                        cacheResolver.Set(key, item);
+                    }
+                    return collection;
+                };
+                aspect.WorkDelegate = newWorkDelegate;
+
+                Cache<IEnumerable<TReturnType>>(aspect, cacheResolver, listCacheKey, work);
+            });
+        }
+
         public static AspectF CacheRetry<TReturnType>(this AspectF aspect,
             ICacheResolver cacheResolver, 
             ILogger logger,
             string key)
-            where TReturnType : class
         {
             return aspect.Combine((work) =>
             {
@@ -446,23 +466,25 @@ namespace OmarALZabir.AspectF
             });
         }
 
-        private static void Cache<TReturnType>(AspectF aspect, ICacheResolver cacheResolver, string key, Action work) where TReturnType : class
+        private static void Cache<TReturnType>(AspectF aspect, ICacheResolver cacheResolver, string key, Action work)             
         {
-            TReturnType cachedObject = cacheResolver.Get(key) as TReturnType;
-            if (cachedObject == null)
+            object cachedData = cacheResolver.Get(key);
+            if (cachedData == null)
             {
                 Func<TReturnType> workDelegate = aspect.WorkDelegate as Func<TReturnType>;
                 TReturnType realObject = workDelegate();
-                cacheResolver.Put(key, realObject);
+                cacheResolver.Add(key, realObject);
                 workDelegate = () => realObject;
                 aspect.WorkDelegate = workDelegate;
             }
             else
             {
-                aspect.WorkDelegate = new Func<TReturnType>(() => cachedObject);
+                aspect.WorkDelegate = new Func<TReturnType>(() => (TReturnType)cachedData);
             }
 
             work();
         }
+
+
     }
 }

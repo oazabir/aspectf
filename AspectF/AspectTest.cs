@@ -6,6 +6,8 @@ using System.IO;
 using System.Threading;
 using Xunit;
 using Moq;
+using System.Web.UI;
+using System.Collections;
 
 namespace OmarALZabir.AspectF
 {
@@ -36,7 +38,7 @@ namespace OmarALZabir.AspectF
             // in cache.
             cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
                 .Returns(default(TestObject)).AtMostOnce().Verifiable();
-            cacheResolver.Expect(c => c.Put(
+            cacheResolver.Expect(c => c.Add(
                 It.Is<string>(cacheKey => cacheKey == key), 
                 It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
                     .AtMostOnce().Verifiable();
@@ -77,7 +79,7 @@ namespace OmarALZabir.AspectF
             // in cache.
             cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
                 .Returns(default(TestObject)).Verifiable();
-            cacheResolver.Expect(c => c.Put(
+            cacheResolver.Expect(c => c.Add(
                 It.Is<string>(cacheKey => cacheKey == key),
                 It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
                     .AtMostOnce();
@@ -151,6 +153,62 @@ namespace OmarALZabir.AspectF
             cacheResolver2.VerifyAll();
             logger2.VerifyAll();
             Assert.Same(cachedObject, result2);
+        }
+
+        [Fact]
+        public void TestCacheList()
+        {
+            List<TestObject> testObjects = new List<TestObject>();
+            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
+            testObjects.Add(newTestObject1);
+            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
+            testObjects.Add(newTestObject2);
+            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
+            testObjects.Add(newTestObject3);
+
+            string collectionKey = "TestObjectCollectionKey";
+
+            var objectQueue = new Queue(testObjects);
+            
+            var keyQueue = new Queue<string>(new string[] { 
+                "TestObject10", "TestObject11", "TestObject12"});            
+
+            // Scenario 1: Collection is not cached. So, after getting the collection, every
+            // object in the collection will be stored in cache using individual item key
+            var cacheResolver = new Mock<ICacheResolver>();
+
+            // CacheList will check if the collection exists in the cache
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == collectionKey)))
+                .Returns(default(List<TestObject>)).AtMostOnce().Verifiable();
+
+            // It won't find it in the cache, so it will add the collection in cache
+            cacheResolver.Expect(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
+                It.Is<List<TestObject>>(toCache => object.Equals(toCache, testObjects))))
+                .AtMostOnce()
+                .Verifiable();                
+            
+            // Then it will store each item inside the collection one by one
+            cacheResolver.Expect(c => 
+                c.Set(It.Is<string>(cacheKey => cacheKey == keyQueue.Dequeue()), 
+                It.Is<object>(o => object.Equals(o, objectQueue.Dequeue()))))
+                .Verifiable();
+            
+            var collection = AspectF.Define.CacheList<TestObject>(cacheResolver.Object, collectionKey,
+                obj => "TestObject" + obj.Age)
+                .Return<IEnumerable<TestObject>>(() => testObjects);
+            
+            Assert.Same(testObjects, collection);
+            cacheResolver.VerifyAll();
+            Assert.Equal(0, objectQueue.Count);
+            Assert.Equal(0, keyQueue.Count);
+
+            // Scenario 2: Collection is cached. So, the collection will be returned from cache
+
+            // Scenario 3: Collection is cached. The collection will be loaded from cache, but
+            // each item in the cache will be individually queries from cache. If not found, it 
+            // will be loaded from source and then updated in cache. The returned collection will
+            // be a new collection, which contains all individual items in the same order, and the
+            // individual items will be loaded from source to give a fresh representation.
         }
 
         [Fact]
