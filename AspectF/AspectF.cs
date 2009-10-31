@@ -34,6 +34,7 @@ namespace OmarALZabir.AspectF
         /// <summary>
         /// Chain of aspects to invoke
         /// </summary>
+        
         internal Action<Action> Chain = null;
 
         /// <summary>
@@ -254,6 +255,7 @@ namespace OmarALZabir.AspectF
             return aspect.Combine((work) =>
             {
                 while (!test()) ;
+                
                 work();
             });
         }
@@ -263,8 +265,8 @@ namespace OmarALZabir.AspectF
         {
             return aspect.Combine((work) =>
             {
-                while (test()) ;
-                work();
+                while (test())
+                    work();
             });
         }
 
@@ -405,25 +407,32 @@ namespace OmarALZabir.AspectF
                 }, null));
         }
 
+        [DebuggerStepThrough]
         public static AspectF Cache<TReturnType>(this AspectF aspect, 
-            ICacheResolver cacheResolver, string key)
+            ICache cacheResolver, string key)
         {            
             return aspect.Combine((work) => 
             {
-                Cache<TReturnType>(aspect, cacheResolver, key, work);
+                Cache<TReturnType>(aspect, cacheResolver, key, work, cached => cached);
             });
         }
 
-        public static AspectF CacheList<TReturnType>(this AspectF aspect,
-            ICacheResolver cacheResolver, string listCacheKey, Func<TReturnType, string> getItemKey)
+        [DebuggerStepThrough]
+        public static AspectF CacheList<TItemType, TListType>(this AspectF aspect,
+            ICache cacheResolver, string listCacheKey, Func<TItemType, string> getItemKey)
+            where TListType : IList<TItemType>, new()
         {
             return aspect.Combine((work) =>
             {
-                Func<IEnumerable<TReturnType>> workDelegate = aspect.WorkDelegate as Func<IEnumerable<TReturnType>>;
-                Func<IEnumerable<TReturnType>> newWorkDelegate = () =>
+                Func<TListType> workDelegate = aspect.WorkDelegate as Func<TListType>;
+
+                // Replace the actual work delegate with a new delegate so that
+                // when the actual work delegate returns a collection, each item
+                // in the collection is stored in cache individually.
+                Func<TListType> newWorkDelegate = () =>
                 {
-                    IEnumerable<TReturnType> collection = workDelegate();
-                    foreach (TReturnType item in collection)
+                    TListType collection = workDelegate();
+                    foreach (TItemType item in collection)
                     {
                         string key = getItemKey(item);
                         cacheResolver.Set(key, item);
@@ -432,12 +441,38 @@ namespace OmarALZabir.AspectF
                 };
                 aspect.WorkDelegate = newWorkDelegate;
 
-                Cache<IEnumerable<TReturnType>>(aspect, cacheResolver, listCacheKey, work);
+                // Get the collection from cache or real source. If collection is returned
+                // from cache, resolve each item in the collection from cache
+                Cache<TListType>(aspect, cacheResolver, listCacheKey, work,
+                    cached =>
+                    {
+                        // Get each item from cache. If any of the item is not in cache
+                        // then discard the whole collection from cache and reload the 
+                        // collection from source.
+                        TListType itemList = new TListType();
+                        foreach (TItemType item in cached)
+                        {
+                            object cachedItem = cacheResolver.Get(getItemKey(item));
+                            if (null != cachedItem)
+                            {
+                                itemList.Add((TItemType)cachedItem);
+                            }
+                            else
+                            {
+                                // One of the item is missing from cache. So, discard the 
+                                // cached list.
+                                return default(TListType);
+                            }
+                        }
+
+                        return itemList;                                               
+                    });
             });
         }
 
+        [DebuggerStepThrough]
         public static AspectF CacheRetry<TReturnType>(this AspectF aspect,
-            ICacheResolver cacheResolver, 
+            ICache cacheResolver, 
             ILogger logger,
             string key)
         {
@@ -445,7 +480,7 @@ namespace OmarALZabir.AspectF
             {
                 try
                 {
-                    Cache<TReturnType>(aspect, cacheResolver, key, work);
+                    Cache<TReturnType>(aspect, cacheResolver, key, work, cached => cached);
                 }
                 catch (Exception x)
                 {
@@ -455,7 +490,7 @@ namespace OmarALZabir.AspectF
                     //Retry
                     try
                     {
-                        Cache<TReturnType>(aspect, cacheResolver, key, work);
+                        Cache<TReturnType>(aspect, cacheResolver, key, work, cached => cached);
                     }
                     catch (Exception ex)
                     {
@@ -466,23 +501,38 @@ namespace OmarALZabir.AspectF
             });
         }
 
-        private static void Cache<TReturnType>(AspectF aspect, ICacheResolver cacheResolver, string key, Action work)             
+        private static void Cache<TReturnType>(AspectF aspect, ICache cacheResolver,
+            string key, Action work, Func<TReturnType, TReturnType> foundInCache)
         {
             object cachedData = cacheResolver.Get(key);
             if (cachedData == null)
             {
-                Func<TReturnType> workDelegate = aspect.WorkDelegate as Func<TReturnType>;
-                TReturnType realObject = workDelegate();
-                cacheResolver.Add(key, realObject);
-                workDelegate = () => realObject;
-                aspect.WorkDelegate = workDelegate;
+                GetListFromSource<TReturnType>(aspect, cacheResolver, key);
             }
             else
             {
-                aspect.WorkDelegate = new Func<TReturnType>(() => (TReturnType)cachedData);
+                // Give caller a chance to shape the cached item before it is returned
+                TReturnType cachedType = foundInCache((TReturnType)cachedData);
+                if (cachedType == null)
+                {
+                    GetListFromSource<TReturnType>(aspect, cacheResolver, key);
+                }
+                else
+                {
+                    aspect.WorkDelegate = new Func<TReturnType>(() => cachedType);
+                }
             }
 
             work();
+        }
+
+        private static void GetListFromSource<TReturnType>(AspectF aspect, ICache cacheResolver, string key)
+        {
+            Func<TReturnType> workDelegate = aspect.WorkDelegate as Func<TReturnType>;
+            TReturnType realObject = workDelegate();
+            cacheResolver.Add(key, realObject);
+            workDelegate = () => realObject;
+            aspect.WorkDelegate = workDelegate;
         }
 
 

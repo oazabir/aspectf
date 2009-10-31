@@ -6,7 +6,7 @@ using System.Web.Caching;
 
 namespace OmarALZabir.AspectF
 {
-    public interface ICacheResolver
+    public interface ICache
     {
         void Add(string key, object value);
         void Add(string key, object value, TimeSpan timeout);

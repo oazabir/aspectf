@@ -13,206 +13,88 @@ namespace OmarALZabir.AspectF
 {
     internal class AspectTest
     {
-        private Mock<ILogger> MockLoggerForException(params Exception[] exceptions)
+        [Fact]
+        public void TestTrapLog()
         {
+            var exception = new ApplicationException("Parent Exception",
+                                new ApplicationException("Child Exception",
+                                    new ApplicationException("Grandchild Exception")));
             var logger = new Mock<ILogger>();
-            Queue<Exception> queue = new Queue<Exception>(exceptions);
-                
-            logger.Expect(l => l.LogException(It.Is<Exception>(x => x == queue.Dequeue()))).Verifiable();
-            return logger;
-        }
+            logger.Expect(l => l.LogException(exception)).Verifiable();
 
-        [Fact]
-        public void TestCache()
-        {
-            var cacheResolver = new Mock<ICacheResolver>();
-            var key = "TestObject.Key";
-            var testObject = new TestObject 
-            { 
-                Age = 27, 
-                Name = "Omar AL Zabir", 
-                BirthDate = DateTime.Parse("9/5/1982") 
-            };
-
-            // Test 1. First attempt to call the cache will return the object as is and store it 
-            // in cache.
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
-                .Returns(default(TestObject)).AtMostOnce().Verifiable();
-            cacheResolver.Expect(c => c.Add(
-                It.Is<string>(cacheKey => cacheKey == key), 
-                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
-                    .AtMostOnce().Verifiable();
-            
-            var result = AspectF.Define.Cache<TestObject>(cacheResolver.Object, key).Return(() => testObject);
-
-            cacheResolver.VerifyAll();
-            Assert.Same(testObject, result);
-
-            // Test 2. If object is in cache, it will return the object from cache, not the real object
-            var cacheResolver2 = new Mock<ICacheResolver>();
-            var cachedObject = new TestObject { Name = "Omar Cached" };
-            cacheResolver2.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
-                .Returns(cachedObject).AtMostOnce().Verifiable();
-
-            var result2 = AspectF.Define.Cache<TestObject>(cacheResolver2.Object, key).Return(() => testObject);
-
-            Assert.Same(cachedObject, result2);
-        }
-
-        [Fact]
-        public void TestCacheWithRetryAndLog()
-        {
-            var cacheResolver = new Mock<ICacheResolver>();
-            var key = "TestObject.Key";
-            var testObject = new TestObject
+            Assert.DoesNotThrow(() =>
             {
-                Age = 27,
-                Name = "Omar AL Zabir",
-                BirthDate = DateTime.Parse("9/5/1982")
-            };
-
-            var ex = new ApplicationException("Some Exception");
-            var logger = MockLoggerForException(ex);
-            logger.Expect(l => l.Log("Log1")).AtMostOnce().Verifiable();
-
-            // Test 1. First attempt to call the cache will return the object as is and store it 
-            // in cache.
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
-                .Returns(default(TestObject)).Verifiable();
-            cacheResolver.Expect(c => c.Add(
-                It.Is<string>(cacheKey => cacheKey == key),
-                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
-                    .AtMostOnce();
-
-            bool exceptionThrown = false;
-            var result = AspectF.Define
-                .Log(logger.Object, "Log1")
-                .Retry(logger.Object)
-                .Cache<TestObject>(cacheResolver.Object, key)                
-                .Return(() => 
-                    {
-                        if (!exceptionThrown)
-                        {
-                            exceptionThrown = true;
-                            throw ex;
-                        }
-                        else if (exceptionThrown)
-                        {
-                            return testObject;
-                        }
-                        else
-                        {
-                            Assert.True(false, "AspectF.Retry should not retry twice");
-                            return default(TestObject);
-                        }
-                    });
-            
+                AspectF.Define.TrapLog(logger.Object).Do(() =>
+                {
+                    throw exception;
+                });
+            });
             logger.VerifyAll();
-            cacheResolver.VerifyAll();
-            Assert.Same(testObject, result);
-
-            // Test 2. If object is in cache, it will return the object from cache, not the real object
-            var cacheResolver2 = new Mock<ICacheResolver>();
-            var cachedObject = new TestObject { Name = "Omar Cached" };
-
-            exceptionThrown = false;
-            cacheResolver2.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
-                .Returns(() =>
-                    {
-                        // Fail ICacheResolver.Get call on first attempt to simulate cache service
-                        // unavailability.
-                        if (!exceptionThrown)
-                        {
-                            exceptionThrown = true;
-                            throw ex;
-                        }
-                        else if (exceptionThrown)
-                        {
-                            return cachedObject;
-                        }
-                        else
-                        {
-                            throw new ApplicationException("ICacheResolver.Get should not be called thrice");
-                        }
-                    }).Verifiable();
-
-            var logger2 = new Mock<ILogger>();
-
-            // When ICacheResolver.Get is called, it will raise an exception on first attempt
-            logger2.Expect(l => l.LogException(It.Is<Exception>(x => object.Equals(x.InnerException, ex))))
-                .AtMostOnce().Verifiable();
-            logger2.Expect(l => l.Log("Log2"))
-                .AtMostOnce().Verifiable();
-
-            var result2 = AspectF.Define
-                .Log(logger2.Object, "Log2")
-                .Retry(logger2.Object)
-                .CacheRetry<TestObject>(cacheResolver2.Object, logger2.Object, key)                
-                .Return(() => testObject);
-
-            cacheResolver2.VerifyAll();
-            logger2.VerifyAll();
-            Assert.Same(cachedObject, result2);
         }
 
         [Fact]
-        public void TestCacheList()
+        public void TestTrapLogThrow()
         {
-            List<TestObject> testObjects = new List<TestObject>();
-            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
-            testObjects.Add(newTestObject1);
-            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
-            testObjects.Add(newTestObject2);
-            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
-            testObjects.Add(newTestObject3);
+            var exception = new ApplicationException("Parent Exception",
+                                new ApplicationException("Child Exception",
+                                    new ApplicationException("Grandchild Exception")));
+            var logger = MockLoggerForException(exception);
 
-            string collectionKey = "TestObjectCollectionKey";
+            Assert.Throws(typeof(ApplicationException), () =>
+            {
+                AspectF.Define.TrapLogThrow(logger.Object).Do(() =>
+                {
+                    throw exception;
+                });
+            });
 
-            var objectQueue = new Queue(testObjects);
-            
-            var keyQueue = new Queue<string>(new string[] { 
-                "TestObject10", "TestObject11", "TestObject12"});            
-
-            // Scenario 1: Collection is not cached. So, after getting the collection, every
-            // object in the collection will be stored in cache using individual item key
-            var cacheResolver = new Mock<ICacheResolver>();
-
-            // CacheList will check if the collection exists in the cache
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == collectionKey)))
-                .Returns(default(List<TestObject>)).AtMostOnce().Verifiable();
-
-            // It won't find it in the cache, so it will add the collection in cache
-            cacheResolver.Expect(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
-                It.Is<List<TestObject>>(toCache => object.Equals(toCache, testObjects))))
-                .AtMostOnce()
-                .Verifiable();                
-            
-            // Then it will store each item inside the collection one by one
-            cacheResolver.Expect(c => 
-                c.Set(It.Is<string>(cacheKey => cacheKey == keyQueue.Dequeue()), 
-                It.Is<object>(o => object.Equals(o, objectQueue.Dequeue()))))
-                .Verifiable();
-            
-            var collection = AspectF.Define.CacheList<TestObject>(cacheResolver.Object, collectionKey,
-                obj => "TestObject" + obj.Age)
-                .Return<IEnumerable<TestObject>>(() => testObjects);
-            
-            Assert.Same(testObjects, collection);
-            cacheResolver.VerifyAll();
-            Assert.Equal(0, objectQueue.Count);
-            Assert.Equal(0, keyQueue.Count);
-
-            // Scenario 2: Collection is cached. So, the collection will be returned from cache
-
-            // Scenario 3: Collection is cached. The collection will be loaded from cache, but
-            // each item in the cache will be individually queries from cache. If not found, it 
-            // will be loaded from source and then updated in cache. The returned collection will
-            // be a new collection, which contains all individual items in the same order, and the
-            // individual items will be loaded from source to give a fresh representation.
+            logger.VerifyAll();
         }
 
         [Fact]
-        public void TestRetry()
+        public void Log_should_call_ILogger_Log_method_with_categories_and_message()
+        {
+            var categories = new string[] { "Category1", "Category2" };
+            var logger1 = new Mock<ILogger>();
+            logger1.Expect(l => l.Log(categories, "Test Log 1")).Verifiable();
+
+            AspectF.Define
+                .Log(logger1.Object, categories, "Test Log 1")
+                .Do(AspectExtensions.DoNothing);
+
+            logger1.Verify();
+        }
+
+        [Fact]
+        public void Log_should_call_ILogger_Log_method_before_and_after_executing_code()
+        {
+            var categories = new string[] { "Category1", "Category2" };
+            var logger2 = new Mock<ILogger>();
+            var loggedBefore = false;
+            var loggedAfter = false;
+
+            logger2.Expect(l => l.Log(categories, "Before Log"))
+                .Callback(() => loggedBefore = true)
+                .AtMostOnce()
+                .Verifiable();
+            logger2.Expect(l => l.Log(categories, "After Log"))
+                .Callback(() => loggedAfter = true)
+                .AtMostOnce()
+                .Verifiable();
+
+            AspectF.Define
+                .Log(logger2.Object, categories, "Before Log", "After Log")
+                .Do(() =>
+                {
+                    Assert.True(loggedBefore);
+                    Assert.False(loggedAfter);
+                });
+
+            logger2.VerifyAll();
+        }
+
+        [Fact]
+        public void Retry_will_execute_code_again_if_any_exception_thrown_on_first_invocation()
         {
             bool result = false;
             bool exceptionThrown = false;
@@ -247,7 +129,7 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestRetryWithDuration()
+        public void Retry_with_duration_will_retry_code_after_the_duration_when_first_invocation_throws_exception()
         {
             bool result = false;
             DateTime firstCallAt = DateTime.Now;
@@ -285,7 +167,7 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestRetryWithDurationExceptionHandlerAndFinallyFailing()
+        public void Retry_will_retry_N_times_when_exception_is_thrown()
         {
             DateTime firstCallAt = DateTime.Now;
             DateTime secondCallAt = DateTime.Now;
@@ -341,7 +223,7 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestDelay()
+        public void Delay_will_execute_code_after_given_delay()
         {
             DateTime start = DateTime.Now;
             DateTime end = DateTime.Now;
@@ -353,7 +235,7 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestMustBeNonNullWithValidParameters()
+        public void MustBeNonNull_will_execute_code_only_when_all_parameters_are_non_null()
         {
             bool result = false;
 
@@ -371,7 +253,7 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestMustBeNonNullWithInvalidParameters()
+        public void MustBeNonNull_will_throw_exception_when_any_parameter_is_null()
         {
             bool result = false;
 
@@ -390,7 +272,7 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestUntil()
+        public void Until_will_keep_executing_code_until_the_condition_returns_true()
         {
             int counter = 10;
             bool callbackFired = false;
@@ -414,31 +296,31 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestWhile()
+        public void While_will_keep_executing_code_while_the_condition_function_returns_true()
         {
             int counter = 10;
+            int called = 0;
             bool callbackFired = false;
 
             AspectF.Define
                 .While(() =>
                 {
-                    counter--;
-                    
-                    Assert.InRange(counter, 0, 9);
+                    Assert.InRange(counter, 0, 10);
 
-                    return counter > 0;
+                    return counter-- > 0;
                 })
                 .Do(() =>
                 {
                     callbackFired = true;
-                    Assert.Equal<int>(0, counter);
+                    called++;                    
                 });
 
             Assert.True(callbackFired, "Assert.While never fired the callback");
+            Assert.Equal<int>(10, called);
         }
 
         [Fact]
-        public void TestWhenTrue()
+        public void When_true_will_execute_code_when_all_conditions_are_true()
         {
             bool callbackFired = false;
             AspectF.Define.WhenTrue(
@@ -466,37 +348,14 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestLog()
+        public void Log_should_log_once_and_retry_should_retry_once()
         {
-            var categories = new string[] { "Category1", "Category2" };
-            var logger1 = new Mock<ILogger>();
-            logger1.Expect(l => l.Log(categories, "Test Log 1")).Verifiable();
-            // Attempt 1: Test one time logging
-            AspectF.Define
-                .Log(logger1.Object, categories, "Test Log 1")
-                .Do(AspectExtensions.DoNothing);
-            logger1.Verify();
-
-            // Attempt 2: Test before and after logging
-            var logger2 = new Mock<ILogger>();
-            logger2.Expect(l => l.Log(categories, "Before Log")).Verifiable();
-            logger2.Expect(l => l.Log(categories, "After Log")).Verifiable();
-            AspectF.Define
-                .Log(logger2.Object, categories, "Before Log", "After Log")
-                .Do(AspectExtensions.DoNothing);
-            logger2.VerifyAll();
-        }
-
-        [Fact]
-        public void TestRetryAndLog()
-        {
-            // Attempt 1: Test log and Retry together
             bool exceptionThrown = false;
             bool retried = false;
             
             var ex = new ApplicationException("First exception thrown which should be ignored");
             var logger = MockLoggerForException(ex);
-            logger.Expect(l => l.Log("TestRetryAndLog"));
+            logger.Expect(l => l.Log("TestRetryAndLog")).AtMostOnce().Verifiable();
 
             AspectF.Define
                 .Log(logger.Object, "TestRetryAndLog")
@@ -517,8 +376,16 @@ namespace OmarALZabir.AspectF
 
             Assert.True(exceptionThrown, "Aspect.Retry did not call the function at all");
             Assert.True(retried, "Aspect.Retry did not retry when exception was thrown first time");
-         
-            // Attempt 2: Test Log Before and After with Retry together            
+        }
+
+        [Fact]
+        public void Log_before_once_and_retry_once_and_after_than_log_after_once()
+        {
+            bool exceptionThrown = false;
+            bool retried = false;
+            
+            var ex = new ApplicationException("First exception thrown which should be ignored");
+            
             var logger2 = MockLoggerForException(ex);
             logger2.Expect(l => l.Log("BeforeLog"));
             logger2.Expect(l => l.Log("AfterLog"));
@@ -540,10 +407,12 @@ namespace OmarALZabir.AspectF
                     }
                 });
             logger2.VerifyAll();
+            Assert.True(exceptionThrown, "Aspect.Retry did not call the function at all");
+            Assert.True(retried, "Aspect.Retry did not retry when exception was thrown first time");
         }
 
         [Fact]
-        public void TestAspectReturn()
+        public void Return_should_return_the_value_returned_from_code()
         {
             int result = AspectF.Define.Return<int>(() =>
                 {
@@ -601,42 +470,313 @@ namespace OmarALZabir.AspectF
         }
 
         [Fact]
-        public void TestTrapLog()
+        public void First_attempt_to_call_the_cache_will_return_the_object_as_is_and_store_it_in_cache()
         {
-            var exception = new ApplicationException("Parent Exception",
-                                new ApplicationException("Child Exception",
-                                    new ApplicationException("Grandchild Exception")));
-            var logger = new Mock<ILogger>();
-            logger.Expect(l => l.LogException(exception)).Verifiable();
+            var cacheResolver = new Mock<ICache>();
+            var key = "TestObject.Key";
+            var testObject = new TestObject
+            {
+                Age = 27,
+                Name = "Omar AL Zabir",
+                BirthDate = DateTime.Parse("9/5/1982")
+            };
 
-            Assert.DoesNotThrow(() =>
-                {
-                    AspectF.Define.TrapLog(logger.Object).Do(() =>
-                        {
-                            throw exception;
-                        });
-                });
-            logger.VerifyAll();            
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(default(TestObject)).AtMostOnce().Verifiable();
+            cacheResolver.Expect(c => c.Add(
+                It.Is<string>(cacheKey => cacheKey == key),
+                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
+                    .AtMostOnce().Verifiable();
+
+            var result = AspectF.Define.Cache<TestObject>(cacheResolver.Object, key).Return(() => testObject);
+
+            cacheResolver.VerifyAll();
+            Assert.Same(testObject, result);
         }
 
         [Fact]
-        public void TestTrapLogThrow()
+        public void If_object_is_in_cache_it_will_return_the_object_from_cache_not_the_real_object()
         {
-            var exception = new ApplicationException("Parent Exception",
-                                new ApplicationException("Child Exception",
-                                    new ApplicationException("Grandchild Exception")));
-            var logger = MockLoggerForException(exception);
-            
-            Assert.Throws(typeof(ApplicationException), () =>
+            var key = "TestObject.Key";
+            var cacheResolver = new Mock<ICache>();
+            var cachedObject = new TestObject { Name = "Omar Cached" };
+            var testObject = new TestObject
             {
-                AspectF.Define.TrapLogThrow(logger.Object).Do(() =>
-                {
-                    throw exception;
-                });
-            });
+                Age = 27,
+                Name = "Omar AL Zabir",
+                BirthDate = DateTime.Parse("9/5/1982")
+            };
 
-            logger.VerifyAll();            
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(cachedObject).AtMostOnce().Verifiable();
+
+            var result2 = AspectF.Define.Cache<TestObject>(cacheResolver.Object, key).Return(() => testObject);
+
+            Assert.Same(cachedObject, result2);
         }
+
+        [Fact]
+        public void Cache_will_fail_if_loading_from_source_throws_exception_and_retry_will_retry_the_cache_operation()
+        {
+            var cacheResolver = new Mock<ICache>();
+            var key = "TestObject.Key";
+            var testObject = new TestObject
+            {
+                Age = 27,
+                Name = "Omar AL Zabir",
+                BirthDate = DateTime.Parse("9/5/1982")
+            };
+
+            var ex = new ApplicationException("Some Exception");
+            var logger = MockLoggerForException(ex);
+            logger.Expect(l => l.Log("Log1")).AtMostOnce().Verifiable();
+
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(default(TestObject)).Verifiable();
+            cacheResolver.Expect(c => c.Add(
+                It.Is<string>(cacheKey => cacheKey == key),
+                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
+                    .AtMostOnce();
+
+            bool exceptionThrown = false;
+            var result = AspectF.Define
+                .Log(logger.Object, "Log1")
+                .Retry(logger.Object)
+                .Cache<TestObject>(cacheResolver.Object, key)
+                .Return(() =>
+                {
+                    if (!exceptionThrown)
+                    {
+                        exceptionThrown = true;
+                        throw ex;
+                    }
+                    else if (exceptionThrown)
+                    {
+                        return testObject;
+                    }
+                    else
+                    {
+                        Assert.True(false, "AspectF.Retry should not retry twice");
+                        return default(TestObject);
+                    }
+                });
+
+            logger.VerifyAll();
+            cacheResolver.VerifyAll();
+            Assert.Same(testObject, result);
+        }
+
+        [Fact]
+        public void When_cache_fails_to_get_from_cache_retry_will_retry_the_operation()
+        {
+            // Test 2. If object is in cache, it will return the object from cache, not the real object
+            var cacheResolver = new Mock<ICache>();
+            var cachedObject = new TestObject { Name = "Omar Cached" };
+            var key = "TestObject.Key";
+            var testObject = new TestObject
+            {
+                Age = 27,
+                Name = "Omar AL Zabir",
+                BirthDate = DateTime.Parse("9/5/1982")
+            };
+
+            var ex = new ApplicationException("Some Exception");
+
+            bool exceptionThrown = false;
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+                .Returns(() =>
+                {
+                    // Fail ICacheResolver.Get call on first attempt to simulate cache service
+                    // unavailability.
+                    if (!exceptionThrown)
+                    {
+                        exceptionThrown = true;
+                        throw ex;
+                    }
+                    else if (exceptionThrown)
+                    {
+                        return cachedObject;
+                    }
+                    else
+                    {
+                        throw new ApplicationException("ICacheResolver.Get should not be called thrice");
+                    }
+                }).Verifiable();
+
+            var logger2 = new Mock<ILogger>();
+
+            // When ICacheResolver.Get is called, it will raise an exception on first attempt
+            logger2.Expect(l => l.LogException(It.Is<Exception>(x => object.Equals(x.InnerException, ex))))
+                .AtMostOnce().Verifiable();
+            logger2.Expect(l => l.Log("Log2"))
+                .AtMostOnce().Verifiable();
+
+            var result2 = AspectF.Define
+                .Log(logger2.Object, "Log2")
+                .Retry(logger2.Object)
+                .CacheRetry<TestObject>(cacheResolver.Object, logger2.Object, key)
+                .Return(() => testObject);
+
+            cacheResolver.VerifyAll();
+            logger2.VerifyAll();
+            Assert.Same(cachedObject, result2);
+        }
+
+        [Fact]
+        public void When_Collection_not_cached_after_getting_the_collection_every_object_in_collection_will_be_stored_in_cache_individually()
+        {
+            List<TestObject> testObjects = new List<TestObject>();
+            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
+            testObjects.Add(newTestObject1);
+            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
+            testObjects.Add(newTestObject2);
+            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
+            testObjects.Add(newTestObject3);
+
+            string collectionKey = "TestObjectCollectionKey";
+
+            var cacheResolver = new Mock<ICache>();
+            var objectQueue = new Queue(testObjects);
+            var keyQueue = new Queue<string>(new string[] { "TestObject10", "TestObject11", "TestObject12" });
+
+            // CacheList will check if the collection exists in the cache
+            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == collectionKey)))
+                .Returns(default(List<TestObject>)).AtMostOnce().Verifiable();
+
+            // It won't find it in the cache, so it will add the collection in cache
+            cacheResolver.Expect(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
+                It.Is<List<TestObject>>(toCache => object.Equals(toCache, testObjects))))
+                .AtMostOnce()
+                .Verifiable();
+
+            // Then it will store each item inside the collection one by one
+            cacheResolver.Expect(c =>
+                c.Set(It.Is<string>(cacheKey => cacheKey == keyQueue.Dequeue()),
+                It.Is<object>(o => object.Equals(o, objectQueue.Dequeue()))))
+                .Verifiable();
+
+            var collection = AspectF.Define.CacheList<TestObject, List<TestObject>>(cacheResolver.Object, collectionKey,
+                obj => "TestObject" + obj.Age)
+                .Return<List<TestObject>>(() => testObjects);
+
+            Assert.Same(testObjects, collection);
+            cacheResolver.VerifyAll();
+            Assert.Equal(0, objectQueue.Count);
+            Assert.Equal(0, keyQueue.Count);
+        }
+
+        [Fact]
+        public void When_Collection_is_cached_each_item_in_cached_collection_will_be_loaded_individually_from_cache()
+        {
+            List<TestObject> testObjects = new List<TestObject>();
+            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
+            testObjects.Add(newTestObject1);
+            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
+            testObjects.Add(newTestObject2);
+            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
+            testObjects.Add(newTestObject3);
+
+            var cacheResolver = new Mock<ICache>();
+
+            string collectionKey = "TestObjectCollectionKey";
+
+            Dictionary<string, object> map = new Dictionary<string, object>();
+            map.Add(collectionKey, testObjects);
+            map.Add("TestObject10", newTestObject1);
+            map.Add("TestObject11", newTestObject2);
+            map.Add("TestObject12", newTestObject3);
+
+            // CacheList will check if the collection exists in the cache
+            // It finds in the cache, then it will query individual objects from cache
+            // Let's assume all cache calls return cached object
+            cacheResolver.Expect(c => c.Get(It.IsAny<string>()))
+                .Returns<string>(key => map[key])
+                .Verifiable();
+
+            var collection = AspectF.Define.CacheList<TestObject, List<TestObject>>(cacheResolver.Object, collectionKey,
+                obj => "TestObject" + obj.Age)
+                .Return<List<TestObject>>(() =>
+                {
+                    Assert.True(false, "Item should be in cache and must not be fetched from source.");
+                    return default(List<TestObject>);
+                });
+
+            // Returned collection is different. It's newly constructed from all the individual
+            // items in the cache
+            Assert.NotSame(collection, testObjects);
+
+            // Every item in original collection should match with the newly returned collection
+            for (int i = 0; i < testObjects.Count; i++)
+                Assert.Same(testObjects[i], collection[i]);
+
+            cacheResolver.VerifyAll();
+        }
+
+        [Fact]
+        public void While_loading_collection_if_any_individual_item_is_not_in_cache_whole_collection_will_be_loaded_from_source()
+        {
+            List<TestObject> testObjects = new List<TestObject>();
+            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
+            testObjects.Add(newTestObject1);
+            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
+            testObjects.Add(newTestObject2);
+            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
+            testObjects.Add(newTestObject3);
+
+            var cacheResolver = new Mock<ICache>();
+
+            string collectionKey = "TestObjectCollectionKey";
+
+            Dictionary<string, object> map = new Dictionary<string, object>();
+            map.Add(collectionKey, testObjects);
+            map.Add("TestObject10", newTestObject1);
+            map.Add("TestObject11", null);  // Make one item missing from cache
+            map.Add("TestObject12", newTestObject3);
+
+            // CacheList will check if the collection exists in the cache
+            // It finds in the cache, then it will query individual objects from cache
+            // Let's assume all cache calls return cached object
+            cacheResolver.Expect(c => c.Get(It.IsAny<string>()))
+                .Returns<string>(key => map[key])
+                .Verifiable();
+
+            var objectQueue = new Queue(testObjects);
+            var keyQueue = new Queue<string>(new string[] { "TestObject10", "TestObject11", "TestObject12" });
+
+            // Collection will be reloaded from source and added to the cache again.
+            cacheResolver.Expect(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
+                It.Is<List<TestObject>>(toCache => object.Equals(toCache, testObjects))))
+                .AtMostOnce()
+                .Verifiable();
+
+            bool isCollectionLoadedFromSource = false;
+            var collection = AspectF.Define.CacheList<TestObject, List<TestObject>>(cacheResolver.Object, collectionKey,
+                obj => "TestObject" + obj.Age)
+                .Return<List<TestObject>>(() =>
+                {
+                    isCollectionLoadedFromSource = true;
+                    return testObjects;
+                });
+
+            // Ensure the collection was really loaded from source
+            Assert.True(isCollectionLoadedFromSource);
+
+            // The returned collection si same as the one source provides
+            Assert.Same(collection, testObjects);
+
+            cacheResolver.VerifyAll();
+        }
+
+        private Mock<ILogger> MockLoggerForException(params Exception[] exceptions)
+        {
+            var logger = new Mock<ILogger>();
+            Queue<Exception> queue = new Queue<Exception>(exceptions);
+
+            logger.Expect(l => l.LogException(It.Is<Exception>(x => x == queue.Dequeue()))).Verifiable();
+            return logger;
+        }
+
+        
     }
 
     
