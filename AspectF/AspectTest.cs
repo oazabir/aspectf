@@ -8,6 +8,7 @@ using Xunit;
 using Moq;
 using System.Web.UI;
 using System.Collections;
+using System.Transactions;
 
 namespace OmarALZabir.AspectF
 {
@@ -586,7 +587,7 @@ namespace OmarALZabir.AspectF
             cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
                 .Returns(() =>
                 {
-                    // Fail ICacheResolver.Get call on first attempt to simulate cache service
+                    // Fail ICache.Get call on first attempt to simulate cache service
                     // unavailability.
                     if (!exceptionThrown)
                     {
@@ -599,13 +600,13 @@ namespace OmarALZabir.AspectF
                     }
                     else
                     {
-                        throw new ApplicationException("ICacheResolver.Get should not be called thrice");
+                        throw new ApplicationException("ICache.Get should not be called thrice");
                     }
                 }).Verifiable();
 
             var logger2 = new Mock<ILogger>();
 
-            // When ICacheResolver.Get is called, it will raise an exception on first attempt
+            // When ICache.Get is called, it will raise an exception on first attempt
             logger2.Expect(l => l.LogException(It.Is<Exception>(x => object.Equals(x.InnerException, ex))))
                 .AtMostOnce().Verifiable();
             logger2.Expect(l => l.Log("Log2"))
@@ -767,6 +768,43 @@ namespace OmarALZabir.AspectF
             cacheResolver.VerifyAll();
         }
 
+
+        [Fact]
+        public void When_an_operation_inside_transaction_fails_it_would_rollback_the_tansaction()
+        {
+            using (var scope = new TransactionScope())
+            {
+                AspectF.Define
+                    .Expected<ApplicationException>()
+                    .Transaction()
+                    .Do(() =>
+                        {
+                            throw new ApplicationException("Fail the transaction");
+                        });
+
+                Assert.Equal(TransactionStatus.Aborted, 
+                    Transaction.Current.TransactionInformation.Status);
+            }
+        }
+
+        [Fact]
+        public void When_an_operation_inside_transaction_succeeds_it_would_commit_the_transaction()
+        {
+            using (var scope = new TransactionScope())
+            {
+                AspectF.Define
+                    .Transaction()
+                    .Do(() =>
+                    {
+                        // Do nothing
+                    });
+
+                Assert.Equal(TransactionStatus.Active, 
+                    Transaction.Current.TransactionInformation.Status);
+                scope.Complete();
+            }
+        }
+
         private Mock<ILogger> MockLoggerForException(params Exception[] exceptions)
         {
             var logger = new Mock<ILogger>();
@@ -775,10 +813,5 @@ namespace OmarALZabir.AspectF
             logger.Expect(l => l.LogException(It.Is<Exception>(x => x == queue.Dequeue()))).Verifiable();
             return logger;
         }
-
-        
     }
-
-    
-
 }

@@ -5,6 +5,7 @@ using System.Text;
 using System.IO;
 using System.Diagnostics;
 using System.Collections;
+using System.Transactions;
 
 namespace OmarALZabir.AspectF
 {
@@ -118,7 +119,7 @@ namespace OmarALZabir.AspectF
             {
                 return new AspectF();
             }
-        }
+        }        
     }   
     
     public static class AspectExtensions
@@ -526,7 +527,36 @@ namespace OmarALZabir.AspectF
             work();
         }
 
-        private static void GetListFromSource<TReturnType>(AspectF aspect, ICache cacheResolver, string key)
+        public static AspectF Expected<TException>(this AspectF aspect)
+            where TException: Exception
+        {
+            return aspect.Combine((work) =>
+                {
+                    try
+                    {
+                        work();
+                    }
+                    catch (TException x)
+                    {
+                        Debug.WriteLine(x.ToString());
+                    }
+                });
+        }
+
+        public static AspectF Transaction(this AspectF aspect)
+        {
+            return aspect.Combine((work) =>
+                {
+                    using (var scope = new TransactionScope(TransactionScopeOption.Required))
+                    {
+                        work();
+                        scope.Complete();
+                    }
+                });
+        }
+
+        private static void GetListFromSource<TReturnType>(AspectF aspect, ICache cacheResolver, 
+            string key)
         {
             Func<TReturnType> workDelegate = aspect.WorkDelegate as Func<TReturnType>;
             TReturnType realObject = workDelegate();
