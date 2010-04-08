@@ -1,10 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.IO;
 using System.Diagnostics;
-using System.Collections;
 using System.Transactions;
 
 namespace OmarALZabir.AspectF
@@ -565,6 +561,22 @@ namespace OmarALZabir.AspectF
             aspect.WorkDelegate = workDelegate;
         }
 
-
+        /// <summary>
+        /// Returns the instance of old object with new operations applied on.
+        /// </summary>
+        /// <typeparam name="TReturnType">The type of the object new operations will be applied on.</typeparam>
+        /// <param name="aspect"></param>
+        /// <param name="item">The object need to be modified.</param>
+        /// <param name="action">The delegate which performs on the object supplied.</param>
+        /// <returns>Returns the old object with new operations applied on.</returns>
+        [DebuggerStepThrough]
+        public static TReturnType Use<TReturnType>(this AspectF aspect, TReturnType item, Action<TReturnType> action)
+        {
+            return aspect.Return<TReturnType>(() =>
+            {
+                action(item);
+                return item;
+            });
+        }
     }
 }

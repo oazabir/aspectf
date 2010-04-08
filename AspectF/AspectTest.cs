@@ -1,18 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.IO;
-using System.Threading;
-using Xunit;
-using Moq;
-using System.Web.UI;
+﻿using Moq;
+using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Threading;
 using System.Transactions;
+using System.Web.UI;
+using Xunit;
 
 namespace OmarALZabir.AspectF
 {
-    internal class AspectTest
+    public class AspectTest
     {
         [Fact]
         public void TestTrapLog()
@@ -812,6 +809,24 @@ namespace OmarALZabir.AspectF
 
             logger.Expect(l => l.LogException(It.Is<Exception>(x => x == queue.Dequeue()))).Verifiable();
             return logger;
+        }
+
+        [Fact]
+        public void Use_Should_ReflectTheChangesMadeInsideTheScope()
+        {
+            var span = new LiteralControl();
+            var visibility = false;
+            var contents = "<b>AspectF</b> rocks";
+
+            AspectF.Define
+            .Use<LiteralControl>(span, control =>
+            {
+                span.Visible = visibility;
+                span.Text = contents;
+            });
+
+            Assert.Equal<bool>(span.Visible, visibility);
+            Assert.Equal<string>(span.Text, contents);
         }
     }
 }
