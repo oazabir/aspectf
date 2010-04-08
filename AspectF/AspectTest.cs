@@ -4,7 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Transactions;
-using System.Web.UI;
+using System.Web.UI.WebControls;
 using Xunit;
 
 namespace OmarALZabir.AspectF
@@ -814,19 +814,22 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void Use_Should_ReflectTheChangesMadeInsideTheScope()
         {
-            var span = new LiteralControl();
-            var visibility = false;
-            var contents = "<b>AspectF</b> rocks";
+            var textBox = new TextBox();
+            var contents = "AspectF rocks!";
 
             AspectF.Define
-            .Use<LiteralControl>(span, control =>
+            .Use<TextBox>(textBox, c =>
             {
-                span.Visible = visibility;
-                span.Text = contents;
+                c.CausesValidation = false;
+                c.MaxLength = 200;
+                c.TextMode = TextBoxMode.Password;
+                c.Text = contents;
             });
 
-            Assert.Equal<bool>(span.Visible, visibility);
-            Assert.Equal<string>(span.Text, contents);
+            Assert.Equal<bool>(textBox.CausesValidation, false);
+            Assert.Equal<int>(textBox.MaxLength, 200);
+            Assert.Equal<TextBoxMode>(textBox.TextMode, TextBoxMode.Password);
+            Assert.Equal<string>(textBox.Text, contents);
         }
     }
 }
