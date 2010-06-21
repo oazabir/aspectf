@@ -3,6 +3,10 @@ Microsoft Visual Studio Solution File, Format Version 10.00
 # Visual Studio 2008
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmarALZabir.AspectF", "AspectF\OmarALZabir.AspectF.csproj", "{515CA4A0-60D8-4200-A2D3-4FA23CBBA704}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmarALZabir.AspectF.Demo", "OmarALZabir.AspectF.Demo\OmarALZabir.AspectF.Demo.csproj", "{403A8357-D2AA-43A4-9D0A-023D55C49308}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmarALZabir.AspectF.Test", "OmarALZabir.AspectF.Test\OmarALZabir.AspectF.Test.csproj", "{94FE644A-180C-43F6-B744-F7FA89ADEBB6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -13,6 +17,14 @@ Global
 		{515CA4A0-60D8-4200-A2D3-4FA23CBBA704}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{515CA4A0-60D8-4200-A2D3-4FA23CBBA704}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{515CA4A0-60D8-4200-A2D3-4FA23CBBA704}.Release|Any CPU.Build.0 = Release|Any CPU
+		{403A8357-D2AA-43A4-9D0A-023D55C49308}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{403A8357-D2AA-43A4-9D0A-023D55C49308}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{403A8357-D2AA-43A4-9D0A-023D55C49308}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{403A8357-D2AA-43A4-9D0A-023D55C49308}.Release|Any CPU.Build.0 = Release|Any CPU
+		{94FE644A-180C-43F6-B744-F7FA89ADEBB6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{94FE644A-180C-43F6-B744-F7FA89ADEBB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{94FE644A-180C-43F6-B744-F7FA89ADEBB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{94FE644A-180C-43F6-B744-F7FA89ADEBB6}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

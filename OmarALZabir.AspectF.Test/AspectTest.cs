@@ -4,10 +4,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Transactions;
-using System.Web.UI.WebControls;
 using Xunit;
 
-namespace OmarALZabir.AspectF
+namespace OmarALZabir.AspectF.Test
 {
     public class AspectTest
     {
@@ -18,15 +17,13 @@ namespace OmarALZabir.AspectF
                                 new ApplicationException("Child Exception",
                                     new ApplicationException("Grandchild Exception")));
             var logger = new Mock<ILogger>();
-            logger.Expect(l => l.LogException(exception)).Verifiable();
+            logger.Setup(l => l.LogException(exception)).Verifiable();
 
-            Assert.DoesNotThrow(() =>
-            {
-                AspectF.Define.TrapLog(logger.Object).Do(() =>
-                {
-                    throw exception;
-                });
-            });
+            Let.Logger = () => logger.Object;
+            Assert.DoesNotThrow(() => Let.Us.TrapLog().Do(() =>
+                                                                           {
+                                                                               throw exception;
+                                                                           }));
             logger.VerifyAll();
         }
 
@@ -38,13 +35,12 @@ namespace OmarALZabir.AspectF
                                     new ApplicationException("Grandchild Exception")));
             var logger = MockLoggerForException(exception);
 
-            Assert.Throws(typeof(ApplicationException), () =>
-            {
-                AspectF.Define.TrapLogThrow(logger.Object).Do(() =>
-                {
-                    throw exception;
-                });
-            });
+            Let.Logger = () => logger.Object;
+
+            Assert.Throws(typeof(ApplicationException), () => Let.Us.TrapLogThrow().Do(() =>
+                                                                                           {
+                                                                                               throw exception;
+                                                                                           }));
 
             logger.VerifyAll();
         }
@@ -54,10 +50,12 @@ namespace OmarALZabir.AspectF
         {
             var categories = new string[] { "Category1", "Category2" };
             var logger1 = new Mock<ILogger>();
-            logger1.Expect(l => l.Log(categories, "Test Log 1")).Verifiable();
+            logger1.Setup(l => l.Log(categories, "Test Log 1")).Verifiable();
 
-            AspectF.Define
-                .Log(logger1.Object, categories, "Test Log 1")
+            Let.Logger = () => logger1.Object;
+
+            Let.Us
+                .Log(categories, "Test Log 1")
                 .Do(AspectExtensions.DoNothing);
 
             logger1.Verify();
@@ -66,22 +64,24 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void Log_should_call_ILogger_Log_method_before_and_after_executing_code()
         {
-            var categories = new string[] { "Category1", "Category2" };
+            var categories = new[] { "Category1", "Category2" };
             var logger2 = new Mock<ILogger>();
             var loggedBefore = false;
             var loggedAfter = false;
 
-            logger2.Expect(l => l.Log(categories, "Before Log"))
+            logger2.Setup(l => l.Log(categories, "Before Log"))
                 .Callback(() => loggedBefore = true)
                 .AtMostOnce()
                 .Verifiable();
-            logger2.Expect(l => l.Log(categories, "After Log"))
+            logger2.Setup(l => l.Log(categories, "After Log"))
                 .Callback(() => loggedAfter = true)
                 .AtMostOnce()
                 .Verifiable();
 
-            AspectF.Define
-                .Log(logger2.Object, categories, "Before Log", "After Log")
+            Let.Logger = () => logger2.Object;
+
+            Let.Us
+                .Log(categories, "Before Log", "After Log")
                 .Do(() =>
                 {
                     Assert.True(loggedBefore);
@@ -99,27 +99,21 @@ namespace OmarALZabir.AspectF
 
             var ex = new ApplicationException("Test exception");
             var mockLoggerForException = MockLoggerForException(ex);
-                    
-            Assert.DoesNotThrow(() =>
-                {
-                    AspectF.Define.Retry(mockLoggerForException.Object).Do(() =>
-                    {
-                        if (!exceptionThrown)
-                        {
-                            exceptionThrown = true;
-                            throw ex;
-                        }
-                        else if (exceptionThrown)
-                        {
-                            result = true;
-                        }
-                        else
-                        {
-                            Assert.True(false, "AspectF.Retry should not retry more than once");
-                        }
-                    });
 
-                });
+            Let.Logger = () => mockLoggerForException.Object;
+            Assert.DoesNotThrow(() => Let.Us.Retry().Do(() =>
+                                                            {
+                                                                if (!exceptionThrown)
+                                                                {
+                                                                    exceptionThrown = true;
+                                                                    throw ex;
+                                                                }
+                                                                if (exceptionThrown)
+                                                                    result = true;
+                                                                else
+                                                                    Assert.True(false,
+                                                                                "AspectF.Retry should not retry more than once");
+                                                            }));
             mockLoggerForException.VerifyAll();
 
             Assert.True(exceptionThrown, "Assert.Retry did not invoke the function at all");
@@ -136,32 +130,29 @@ namespace OmarALZabir.AspectF
 
             var ex = new ApplicationException("Test exception");
             var logger = MockLoggerForException(ex);
-            Assert.DoesNotThrow(() =>
-                {
-                    AspectF.Define.Retry(5000, logger.Object).Do(() =>
-                    {
-                        if (!exceptionThrown)
-                        {
-                            firstCallAt = DateTime.Now;
-                            exceptionThrown = true;
-                            throw ex;
-                        }
-                        else if (exceptionThrown)
-                        {
-                            secondCallAt = DateTime.Now;
-                            result = true;
-                        }
-                        else
-                        {
-                            Assert.True(false, "Aspect.Retry should not retry more than once.");
-                        }
-                    });
-                });
+            Let.Logger = () => logger.Object;
+            Assert.DoesNotThrow(() => Let.Us.Retry(5000).Do(() =>
+                                                                {
+                                                                    if (!exceptionThrown)
+                                                                    {
+                                                                        firstCallAt = DateTime.Now;
+                                                                        exceptionThrown = true;
+                                                                        throw ex;
+                                                                    }
+                                                                    if (exceptionThrown)
+                                                                    {
+                                                                        secondCallAt = DateTime.Now;
+                                                                        result = true;
+                                                                    }
+                                                                    else
+                                                                        Assert.True(false,
+                                                                                    "Aspect.Retry should not retry more than once.");
+                                                                }));
             logger.VerifyAll();
 
             Assert.True(exceptionThrown, "AspectF.Retry did not invoke the function at all");
             Assert.True(result, "AspectF.Retry did not retry the function after exception was thrown");
-            Assert.InRange<Double>((secondCallAt - firstCallAt).TotalSeconds, 4.9d, 5.1d);
+            Assert.InRange((secondCallAt - firstCallAt).TotalSeconds, 4.9d, 5.1d);
         }
 
         [Fact]
@@ -180,43 +171,38 @@ namespace OmarALZabir.AspectF
             var ex3 = new ApplicationException("Third exception");
 
             var logger = MockLoggerForException(ex1, ex2, ex3);
-            Assert.DoesNotThrow(() =>
-                {
-                    AspectF.Define.Retry(5000, 2,
-                        x => { expectedExceptionFound = (x == ex1 || x == ex2 || x == ex3); },
-                        errors => { allRetryFailed = true; },
-                        logger.Object)
-                        .Do(() =>
-                    {
-                        if (!exceptionThrown)
-                        {
-                            firstCallAt = DateTime.Now;
-                            exceptionThrown = true;
-                            throw ex1;
-                        }
-                        else if (!firstRetry)
-                        {
-                            secondCallAt = DateTime.Now;
-                            firstRetry = true;
-                            throw ex2;
-                        }
-                        else if (!secondRetry)
-                        {
-                            secondRetry = true;
-                            throw ex3;
-                        }
-                        else
-                        {
-                            Assert.True(false, "Aspect.Retry should not retry more than twice.");
-                        }
-                    });
-                });
+            Let.Logger = () => logger.Object;
+            Assert.DoesNotThrow(() => Let.Us.Retry(5000, 2,
+                                                   x => { expectedExceptionFound = (x == ex1 || x == ex2 || x == ex3); },
+                                                   errors => { allRetryFailed = true; })
+                                          .Do(() =>
+                                                  {
+                                                      if (!exceptionThrown)
+                                                      {
+                                                          firstCallAt = DateTime.Now;
+                                                          exceptionThrown = true;
+                                                          throw ex1;
+                                                      }
+                                                      if (!firstRetry)
+                                                      {
+                                                          secondCallAt = DateTime.Now;
+                                                          firstRetry = true;
+                                                          throw ex2;
+                                                      }
+                                                      if (!secondRetry)
+                                                      {
+                                                          secondRetry = true;
+                                                          throw ex3;
+                                                      }
+                                                      Assert.True(false,
+                                                                  "Aspect.Retry should not retry more than twice.");
+                                                  }));
             logger.VerifyAll();
 
             Assert.True(exceptionThrown, "Assert.Retry did not invoke the function at all");
             Assert.True(firstRetry, "Assert.Retry did not retry the function after exception was thrown");
             Assert.True(secondRetry, "Assert.Retry did not retry the function second time after exception was thrown");
-            Assert.InRange<Double>((secondCallAt - firstCallAt).TotalSeconds, 4.9d, 5.1d); 
+            Assert.InRange((secondCallAt - firstCallAt).TotalSeconds, 4.9d, 5.1d);
             Assert.True(allRetryFailed, "Assert.Retry did not call the final fail handler");
         }
 
@@ -226,10 +212,10 @@ namespace OmarALZabir.AspectF
             DateTime start = DateTime.Now;
             DateTime end = DateTime.Now;
 
-            AspectF.Define.Delay(5000).Do(() => { end = DateTime.Now; });
+            Let.Us.Delay(5000).Do(() => { end = DateTime.Now; });
 
             TimeSpan delay = end - start;
-            Assert.InRange<double>(delay.TotalSeconds, 4.9d, 5.1d);
+            Assert.InRange(delay.TotalSeconds, 4.9d, 5.1d);
         }
 
         [Fact]
@@ -237,15 +223,9 @@ namespace OmarALZabir.AspectF
         {
             bool result = false;
 
-            Assert.DoesNotThrow(delegate
-            {
-                AspectF.Define
-                .MustBeNonNull(1, DateTime.Now, string.Empty, "Hello", new object())
-                .Do(delegate
-                {
-                    result = true;
-                });
-            });
+            Assert.DoesNotThrow(() => Let.Us
+                                          .MustBeNonNull(1, DateTime.Now, string.Empty, "Hello", new object())
+                                          .Do(() => result = true));
 
             Assert.True(result, "Assert.MustBeNonNull did not call the function although all parameters were non-null");
         }
@@ -257,7 +237,7 @@ namespace OmarALZabir.AspectF
 
             Assert.Throws(typeof(ArgumentException), delegate
             {
-                AspectF.Define
+                Let.Us
                     .MustBeNonNull(1, DateTime.Now, string.Empty, null, "Hello", new object())
                     .Do(() =>
                 {
@@ -266,7 +246,7 @@ namespace OmarALZabir.AspectF
 
                 Assert.True(result, "Assert.MustBeNonNull must not call the function when there's a null parameter");
             });
-            
+
         }
 
         [Fact]
@@ -275,19 +255,19 @@ namespace OmarALZabir.AspectF
             int counter = 10;
             bool callbackFired = false;
 
-            AspectF.Define
+            Let.Us
                 .Until(() =>
                 {
                     counter--;
-                    
-                    Assert.InRange<int>(counter, 0, 9);
+
+                    Assert.InRange(counter, 0, 9);
 
                     return counter == 0;
                 })
                 .Do(() =>
                 {
                     callbackFired = true;
-                    Assert.Equal<int>(0, counter);
+                    Assert.Equal(0, counter);
                 });
 
             Assert.True(callbackFired, "Assert.Until never fired the callback");
@@ -300,7 +280,7 @@ namespace OmarALZabir.AspectF
             int called = 0;
             bool callbackFired = false;
 
-            AspectF.Define
+            Let.Us
                 .While(() =>
                 {
                     Assert.InRange(counter, 0, 10);
@@ -310,22 +290,22 @@ namespace OmarALZabir.AspectF
                 .Do(() =>
                 {
                     callbackFired = true;
-                    called++;                    
+                    called++;
                 });
 
             Assert.True(callbackFired, "Assert.While never fired the callback");
-            Assert.Equal<int>(10, called);
+            Assert.Equal(10, called);
         }
 
         [Fact]
         public void When_true_will_execute_code_when_all_conditions_are_true()
         {
             bool callbackFired = false;
-            AspectF.Define.WhenTrue(
+            Let.Us.WhenTrue(
                 () => 1 == 1,
                 () => null == null,
                 () => 1 > 0)
-                .Do(() => 
+                .Do(() =>
                     {
                         callbackFired = true;
                     });
@@ -333,11 +313,11 @@ namespace OmarALZabir.AspectF
             Assert.True(callbackFired, "Assert.WhenTrue did not fire callback although all conditions were true");
 
             bool callbackFired2 = false;
-            AspectF.Define.WhenTrue(
+            Let.Us.WhenTrue(
                 () => 1 == 0, // fail
                 () => null == null,
                 () => 1 > 0)
-                .Do(() => 
+                .Do(() =>
                     {
                         callbackFired2 = true;
                     });
@@ -350,26 +330,24 @@ namespace OmarALZabir.AspectF
         {
             bool exceptionThrown = false;
             bool retried = false;
-            
+
             var ex = new ApplicationException("First exception thrown which should be ignored");
             var logger = MockLoggerForException(ex);
-            logger.Expect(l => l.Log("TestRetryAndLog")).AtMostOnce().Verifiable();
+            logger.Setup(l => l.Log("TestRetryAndLog")).AtMostOnce().Verifiable();
 
-            AspectF.Define
-                .Log(logger.Object, "TestRetryAndLog")
-                .Retry(logger.Object)
-                .Do(() => 
-            {
-                if (!exceptionThrown)
-                {
-                    exceptionThrown = true;
-                    throw ex;
-                }
-                else
-                {
-                    retried = true;
-                }
-            });
+            Let.Logger = () => logger.Object;
+            Let.Us
+                .Log("TestRetryAndLog")
+                .Retry()
+                .Do(() =>
+                        {
+                            if (!exceptionThrown)
+                            {
+                                exceptionThrown = true;
+                                throw ex;
+                            }
+                            retried = true;
+                        });
             logger.VerifyAll();
 
             Assert.True(exceptionThrown, "Aspect.Retry did not call the function at all");
@@ -379,31 +357,29 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void Log_before_once_and_retry_once_and_after_than_log_after_once()
         {
-            bool exceptionThrown = false;
+            bool exceptionThrown;
             bool retried = false;
-            
+
             var ex = new ApplicationException("First exception thrown which should be ignored");
-            
+
             var logger2 = MockLoggerForException(ex);
-            logger2.Expect(l => l.Log("BeforeLog"));
-            logger2.Expect(l => l.Log("AfterLog"));
+            logger2.Setup(l => l.Log("BeforeLog"));
+            logger2.Setup(l => l.Log("AfterLog"));
 
             exceptionThrown = false;
-            AspectF.Define
-                .Log(logger2.Object, "BeforeLog", "AfterLog")
-                .Retry(logger2.Object)
+            Let.Logger = () => logger2.Object;
+            Let.Us
+                .Log("BeforeLog", "AfterLog")
+                .Retry()
                 .Do(() =>
-                {
-                    if (!exceptionThrown)
-                    {
-                        exceptionThrown = true;
-                        throw ex;
-                    }
-                    else
-                    {
-                        retried = true;
-                    }
-                });
+                        {
+                            if (!exceptionThrown)
+                            {
+                                exceptionThrown = true;
+                                throw ex;
+                            }
+                            retried = true;
+                        });
             logger2.VerifyAll();
             Assert.True(exceptionThrown, "Aspect.Retry did not call the function at all");
             Assert.True(retried, "Aspect.Retry did not retry when exception was thrown first time");
@@ -412,28 +388,24 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void Return_should_return_the_value_returned_from_code()
         {
-            int result = AspectF.Define.Return<int>(() =>
-                {
-                    return 1;
-                });
+            int result = Let.Us.Return(() => 1);
 
             Assert.Equal(1, result);
         }
+
 
         [Fact]
         public void TestAspectReturnWithOtherAspects()
         {
             var logger = new Mock<ILogger>();
-            logger.Expect(l => l.Log("Test Logging")).Verifiable();
+            logger.Setup(l => l.Log("Test Logging")).Verifiable();
 
-            int result = AspectF.Define
-                .Log(logger.Object, "Test Logging")
-                .Retry(2, new Mock<ILogger>().Object)
+            Let.Logger = () => logger.Object;
+            int result = Let.Us
+                .Log("Test Logging")
+                .Retry(2)
                 .MustBeNonNull(1, DateTime.Now, string.Empty)
-                .Return<int>(() =>
-                {
-                    return 1;
-                });
+                .Return(() => 1);
 
             logger.VerifyAll();
             Assert.Equal(1, result);
@@ -444,7 +416,7 @@ namespace OmarALZabir.AspectF
         {
             bool callExecutedImmediately = false;
             bool callbackFired = false;
-            AspectF.Define.RunAsync().Do(() =>
+            Let.Us.RunAsync().Do(() =>
                 {
                     callbackFired = true;
                     Assert.True(callExecutedImmediately, "Aspect.RunAsync Call did not execute asynchronously");
@@ -456,7 +428,7 @@ namespace OmarALZabir.AspectF
 
             bool callCompleted = false;
             bool callReturnedImmediately = false;
-            AspectF.Define.RunAsync(() => Assert.True(callCompleted, "Aspect.RunAsync Callback did not fire after the call has completed properly"))
+            Let.Us.RunAsync(() => Assert.True(callCompleted, "Aspect.RunAsync Callback did not fire after the call has completed properly"))
                 .Do(() =>
                     {
                         callCompleted = true;
@@ -471,7 +443,7 @@ namespace OmarALZabir.AspectF
         public void First_attempt_to_call_the_cache_will_return_the_object_as_is_and_store_it_in_cache()
         {
             var cacheResolver = new Mock<ICache>();
-            var key = "TestObject.Key";
+            const string key = "TestObject.Key";
             var testObject = new TestObject
             {
                 Age = 27,
@@ -479,14 +451,15 @@ namespace OmarALZabir.AspectF
                 BirthDate = DateTime.Parse("9/5/1982")
             };
 
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+            cacheResolver.Setup(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
                 .Returns(default(TestObject)).AtMostOnce().Verifiable();
-            cacheResolver.Expect(c => c.Add(
+            cacheResolver.Setup(c => c.Add(
                 It.Is<string>(cacheKey => cacheKey == key),
-                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
+                It.Is<TestObject>(cacheObject => Equals(cacheObject, testObject))))
                     .AtMostOnce().Verifiable();
 
-            var result = AspectF.Define.Cache<TestObject>(cacheResolver.Object, key).Return(() => testObject);
+            Let.Cache = () => cacheResolver.Object;
+            var result = Let.Us.Cache<TestObject>(key).Return(() => testObject);
 
             cacheResolver.VerifyAll();
             Assert.Same(testObject, result);
@@ -505,10 +478,12 @@ namespace OmarALZabir.AspectF
                 BirthDate = DateTime.Parse("9/5/1982")
             };
 
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+            cacheResolver.Setup(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
                 .Returns(cachedObject).AtMostOnce().Verifiable();
 
-            var result2 = AspectF.Define.Cache<TestObject>(cacheResolver.Object, key).Return(() => testObject);
+            Let.Cache = () => cacheResolver.Object;
+
+            var result2 = Let.Us.Cache<TestObject>(key).Return(() => testObject);
 
             Assert.Same(cachedObject, result2);
         }
@@ -517,7 +492,7 @@ namespace OmarALZabir.AspectF
         public void Cache_will_fail_if_loading_from_source_throws_exception_and_retry_will_retry_the_cache_operation()
         {
             var cacheResolver = new Mock<ICache>();
-            var key = "TestObject.Key";
+            const string key = "TestObject.Key";
             var testObject = new TestObject
             {
                 Age = 27,
@@ -527,37 +502,36 @@ namespace OmarALZabir.AspectF
 
             var ex = new ApplicationException("Some Exception");
             var logger = MockLoggerForException(ex);
-            logger.Expect(l => l.Log("Log1")).AtMostOnce().Verifiable();
+            logger.Setup(l => l.Log("Log1")).AtMostOnce().Verifiable();
 
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+            cacheResolver.Setup(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
                 .Returns(default(TestObject)).Verifiable();
-            cacheResolver.Expect(c => c.Add(
+            cacheResolver.Setup(c => c.Add(
                 It.Is<string>(cacheKey => cacheKey == key),
-                It.Is<TestObject>(cacheObject => object.Equals(cacheObject, testObject))))
+                It.Is<TestObject>(cacheObject => Equals(cacheObject, testObject))))
                     .AtMostOnce();
 
             bool exceptionThrown = false;
-            var result = AspectF.Define
-                .Log(logger.Object, "Log1")
-                .Retry(logger.Object)
-                .Cache<TestObject>(cacheResolver.Object, key)
+            Let.Logger = () => logger.Object;
+            Let.Cache = () => cacheResolver.Object;
+            var result = Let.Us
+                .Log("Log1")
+                .Retry()
+                .Cache<TestObject>(key)
                 .Return(() =>
-                {
-                    if (!exceptionThrown)
-                    {
-                        exceptionThrown = true;
-                        throw ex;
-                    }
-                    else if (exceptionThrown)
-                    {
-                        return testObject;
-                    }
-                    else
-                    {
-                        Assert.True(false, "AspectF.Retry should not retry twice");
-                        return default(TestObject);
-                    }
-                });
+                            {
+                                if (!exceptionThrown)
+                                {
+                                    exceptionThrown = true;
+                                    throw ex;
+                                }
+                                if (exceptionThrown)
+                                {
+                                    return testObject;
+                                }
+                                Assert.True(false, "AspectF.Retry should not retry twice");
+                                return default(TestObject);
+                            });
 
             logger.VerifyAll();
             cacheResolver.VerifyAll();
@@ -570,7 +544,7 @@ namespace OmarALZabir.AspectF
             // Test 2. If object is in cache, it will return the object from cache, not the real object
             var cacheResolver = new Mock<ICache>();
             var cachedObject = new TestObject { Name = "Omar Cached" };
-            var key = "TestObject.Key";
+            const string key = "TestObject.Key";
             var testObject = new TestObject
             {
                 Age = 27,
@@ -581,38 +555,37 @@ namespace OmarALZabir.AspectF
             var ex = new ApplicationException("Some Exception");
 
             bool exceptionThrown = false;
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
+            cacheResolver.Setup(c => c.Get(It.Is<string>(cacheKey => cacheKey == key)))
                 .Returns(() =>
-                {
-                    // Fail ICache.Get call on first attempt to simulate cache service
-                    // unavailability.
-                    if (!exceptionThrown)
-                    {
-                        exceptionThrown = true;
-                        throw ex;
-                    }
-                    else if (exceptionThrown)
-                    {
-                        return cachedObject;
-                    }
-                    else
-                    {
-                        throw new ApplicationException("ICache.Get should not be called thrice");
-                    }
-                }).Verifiable();
+                             {
+                                 // Fail ICache.Get call on first attempt to simulate cache service
+                                 // unavailability.
+                                 if (!exceptionThrown)
+                                 {
+                                     exceptionThrown = true;
+                                     throw ex;
+                                 }
+                                 if (exceptionThrown)
+                                 {
+                                     return cachedObject;
+                                 }
+                                 throw new ApplicationException("ICache.Get should not be called thrice");
+                             }).Verifiable();
 
             var logger2 = new Mock<ILogger>();
 
             // When ICache.Get is called, it will raise an exception on first attempt
-            logger2.Expect(l => l.LogException(It.Is<Exception>(x => object.Equals(x.InnerException, ex))))
+            logger2.Setup(l => l.LogException(It.Is<Exception>(x => Equals(x, ex))))
                 .AtMostOnce().Verifiable();
-            logger2.Expect(l => l.Log("Log2"))
+            logger2.Setup(l => l.Log("Log2"))
                 .AtMostOnce().Verifiable();
 
-            var result2 = AspectF.Define
-                .Log(logger2.Object, "Log2")
-                .Retry(logger2.Object)
-                .CacheRetry<TestObject>(cacheResolver.Object, logger2.Object, key)
+            Let.Logger = () => logger2.Object;
+            Let.Cache = () => cacheResolver.Object;
+            var result2 = Let.Us
+                .Log("Log2")
+                .Retry()
+                .CacheRetry<TestObject>(key)
                 .Return(() => testObject);
 
             cacheResolver.VerifyAll();
@@ -623,39 +596,42 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void When_Collection_not_cached_after_getting_the_collection_every_object_in_collection_will_be_stored_in_cache_individually()
         {
-            List<TestObject> testObjects = new List<TestObject>();
-            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
+            var testObjects = new List<TestObject>();
+            var newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
             testObjects.Add(newTestObject1);
-            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
+            var newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
             testObjects.Add(newTestObject2);
-            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
+            var newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
             testObjects.Add(newTestObject3);
 
-            string collectionKey = "TestObjectCollectionKey";
+            const string collectionKey = "TestObjectCollectionKey";
 
             var cacheResolver = new Mock<ICache>();
             var objectQueue = new Queue(testObjects);
-            var keyQueue = new Queue<string>(new string[] { "TestObject10", "TestObject11", "TestObject12" });
+            var keyQueue = new Queue<string>(new[] { "TestObject10", "TestObject11", "TestObject12" });
 
             // CacheList will check if the collection exists in the cache
-            cacheResolver.Expect(c => c.Get(It.Is<string>(cacheKey => cacheKey == collectionKey)))
+            cacheResolver.Setup(c => c.Get(It.Is<string>(cacheKey => cacheKey == collectionKey)))
                 .Returns(default(List<TestObject>)).AtMostOnce().Verifiable();
 
             // It won't find it in the cache, so it will add the collection in cache
-            cacheResolver.Expect(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
-                It.Is<List<TestObject>>(toCache => object.Equals(toCache, testObjects))))
+            cacheResolver.Setup(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
+                It.Is<List<TestObject>>(toCache => Equals(toCache, testObjects))))
                 .AtMostOnce()
                 .Verifiable();
 
             // Then it will store each item inside the collection one by one
-            cacheResolver.Expect(c =>
-                c.Set(It.Is<string>(cacheKey => cacheKey == keyQueue.Dequeue()),
-                It.Is<object>(o => object.Equals(o, objectQueue.Dequeue()))))
-                .Verifiable();
-
-            var collection = AspectF.Define.CacheList<TestObject, List<TestObject>>(cacheResolver.Object, collectionKey,
-                obj => "TestObject" + obj.Age)
-                .Return<List<TestObject>>(() => testObjects);
+            cacheResolver.Setup(c =>
+                                c.Set(It.Is<string>(cacheKey => cacheKey == keyQueue.Peek()),
+                                      It.Is<object>(o => Equals(o, objectQueue.Peek())))).Callback(() =>
+                                                                                                              {
+                                                                                                                  objectQueue.Dequeue();
+                                                                                                                  keyQueue.Dequeue();
+                                                                                                              }).Verifiable();
+            Let.Cache = () => cacheResolver.Object;
+            var collection = Let.Us.CacheList<TestObject, List<TestObject>>(collectionKey,
+                obj => string.Format("TestObject{0}", obj.Age))
+                .Return(() => testObjects);
 
             Assert.Same(testObjects, collection);
             cacheResolver.VerifyAll();
@@ -666,34 +642,37 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void When_Collection_is_cached_each_item_in_cached_collection_will_be_loaded_individually_from_cache()
         {
-            List<TestObject> testObjects = new List<TestObject>();
-            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
+            var testObjects = new List<TestObject>();
+            var newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
             testObjects.Add(newTestObject1);
-            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
+            var newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
             testObjects.Add(newTestObject2);
-            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
+            var newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
             testObjects.Add(newTestObject3);
 
             var cacheResolver = new Mock<ICache>();
 
-            string collectionKey = "TestObjectCollectionKey";
+            const string collectionKey = "TestObjectCollectionKey";
 
-            Dictionary<string, object> map = new Dictionary<string, object>();
-            map.Add(collectionKey, testObjects);
-            map.Add("TestObject10", newTestObject1);
-            map.Add("TestObject11", newTestObject2);
-            map.Add("TestObject12", newTestObject3);
+            var map = new Dictionary<string, object>
+                          {
+                              {collectionKey, testObjects},
+                              {"TestObject10", newTestObject1},
+                              {"TestObject11", newTestObject2},
+                              {"TestObject12", newTestObject3}
+                          };
 
             // CacheList will check if the collection exists in the cache
             // It finds in the cache, then it will query individual objects from cache
             // Let's assume all cache calls return cached object
-            cacheResolver.Expect(c => c.Get(It.IsAny<string>()))
+            cacheResolver.Setup(c => c.Get(It.IsAny<string>()))
                 .Returns<string>(key => map[key])
                 .Verifiable();
 
-            var collection = AspectF.Define.CacheList<TestObject, List<TestObject>>(cacheResolver.Object, collectionKey,
-                obj => "TestObject" + obj.Age)
-                .Return<List<TestObject>>(() =>
+            Let.Cache = () => cacheResolver.Object;
+            var collection = Let.Us.CacheList<TestObject, List<TestObject>>(collectionKey,
+                obj => string.Format("TestObject{0}", obj.Age))
+                .Return(() =>
                 {
                     Assert.True(false, "Item should be in cache and must not be fetched from source.");
                     return default(List<TestObject>);
@@ -713,44 +692,44 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void While_loading_collection_if_any_individual_item_is_not_in_cache_whole_collection_will_be_loaded_from_source()
         {
-            List<TestObject> testObjects = new List<TestObject>();
-            TestObject newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
+            var testObjects = new List<TestObject>();
+            var newTestObject1 = new TestObject { Age = 10, BirthDate = DateTime.Parse("1/1/1999"), Name = "User A" };
             testObjects.Add(newTestObject1);
-            TestObject newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
+            var newTestObject2 = new TestObject { Age = 11, BirthDate = DateTime.Parse("1/1/1998"), Name = "User B" };
             testObjects.Add(newTestObject2);
-            TestObject newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
+            var newTestObject3 = new TestObject { Age = 12, BirthDate = DateTime.Parse("1/1/1997"), Name = "User C" };
             testObjects.Add(newTestObject3);
 
             var cacheResolver = new Mock<ICache>();
 
-            string collectionKey = "TestObjectCollectionKey";
+            const string collectionKey = "TestObjectCollectionKey";
 
-            Dictionary<string, object> map = new Dictionary<string, object>();
-            map.Add(collectionKey, testObjects);
-            map.Add("TestObject10", newTestObject1);
-            map.Add("TestObject11", null);  // Make one item missing from cache
-            map.Add("TestObject12", newTestObject3);
+            var map = new Dictionary<string, object>
+                          {
+                              {collectionKey, testObjects}, 
+                              {"TestObject10", newTestObject1}, 
+                              {"TestObject11", null}, 
+                              {"TestObject12", newTestObject3}
+                          };
 
             // CacheList will check if the collection exists in the cache
             // It finds in the cache, then it will query individual objects from cache
             // Let's assume all cache calls return cached object
-            cacheResolver.Expect(c => c.Get(It.IsAny<string>()))
+            cacheResolver.Setup(c => c.Get(It.IsAny<string>()))
                 .Returns<string>(key => map[key])
                 .Verifiable();
 
-            var objectQueue = new Queue(testObjects);
-            var keyQueue = new Queue<string>(new string[] { "TestObject10", "TestObject11", "TestObject12" });
-
             // Collection will be reloaded from source and added to the cache again.
-            cacheResolver.Expect(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
-                It.Is<List<TestObject>>(toCache => object.Equals(toCache, testObjects))))
+            cacheResolver.Setup(c => c.Add(It.Is<string>(cacheKey => cacheKey == collectionKey),
+                It.Is<List<TestObject>>(toCache => Equals(toCache, testObjects))))
                 .AtMostOnce()
                 .Verifiable();
 
-            bool isCollectionLoadedFromSource = false;
-            var collection = AspectF.Define.CacheList<TestObject, List<TestObject>>(cacheResolver.Object, collectionKey,
+            var isCollectionLoadedFromSource = false;
+            Let.Cache = () => cacheResolver.Object;
+            var collection = Let.Us.CacheList<TestObject, List<TestObject>>(collectionKey,
                 obj => "TestObject" + obj.Age)
-                .Return<List<TestObject>>(() =>
+                .Return(() =>
                 {
                     isCollectionLoadedFromSource = true;
                     return testObjects;
@@ -769,18 +748,18 @@ namespace OmarALZabir.AspectF
         [Fact]
         public void When_an_operation_inside_transaction_fails_it_would_rollback_the_tansaction()
         {
-            using (var scope = new TransactionScope())
+            using (new TransactionScope())
             {
-                AspectF.Define
+                Let.Us
                     .Expected<ApplicationException>()
                     .Transaction()
                     .Do(() =>
-                        {
-                            throw new ApplicationException("Fail the transaction");
-                        });
+                            {
+                                throw new ApplicationException("Fail the transaction");
+                            });
 
-                Assert.Equal(TransactionStatus.Aborted, 
-                    Transaction.Current.TransactionInformation.Status);
+                Assert.Equal(TransactionStatus.Aborted,
+                             Transaction.Current.TransactionInformation.Status);
             }
         }
 
@@ -789,47 +768,60 @@ namespace OmarALZabir.AspectF
         {
             using (var scope = new TransactionScope())
             {
-                AspectF.Define
+                Let.Us
                     .Transaction()
                     .Do(() =>
                     {
                         // Do nothing
                     });
 
-                Assert.Equal(TransactionStatus.Active, 
+                Assert.Equal(TransactionStatus.Active,
                     Transaction.Current.TransactionInformation.Status);
                 scope.Complete();
             }
         }
 
-        private Mock<ILogger> MockLoggerForException(params Exception[] exceptions)
+        private static Mock<ILogger> MockLoggerForException(params Exception[] exceptions)
         {
             var logger = new Mock<ILogger>();
-            Queue<Exception> queue = new Queue<Exception>(exceptions);
+            var queue = new Queue<Exception>(exceptions);
 
-            logger.Expect(l => l.LogException(It.Is<Exception>(x => x == queue.Dequeue()))).Verifiable();
+            logger.Setup(l => l.LogException(It.Is<Exception>(x => x == queue.Peek()))).Callback(() => queue.Dequeue()).Verifiable();
             return logger;
         }
 
         [Fact]
         public void Use_Should_ReflectTheChangesMadeInsideTheScope()
         {
-            var textBox = new TextBox();
-            var contents = "AspectF rocks!";
+            var textBox = new TestObject();
+            const string name = "AspectF rocks!";
 
-            AspectF.Define
-            .Use<TextBox>(textBox, c =>
+            Let.Us
+            .Use(textBox, c =>
             {
-                c.CausesValidation = false;
-                c.MaxLength = 200;
-                c.TextMode = TextBoxMode.Password;
-                c.Text = contents;
+                c.Age = 15;
+                c.BirthDate = new DateTime(1995, 1, 1);
+                c.Name = name;
             });
 
-            Assert.Equal<bool>(textBox.CausesValidation, false);
-            Assert.Equal<int>(textBox.MaxLength, 200);
-            Assert.Equal<TextBoxMode>(textBox.TextMode, TextBoxMode.Password);
-            Assert.Equal<string>(textBox.Text, contents);
+            Assert.Equal(textBox.Age, 15);
+            Assert.Equal(textBox.BirthDate, new DateTime(1995, 1, 1));
+            Assert.Equal(textBox.Name, name);
+        }
+
+        [Fact]
+        public void Test_MockLoggerForExceptionMethod()
+        {
+            var exception1 = new Exception("exception 1");
+            var exception2 = new Exception("exception 2");
+            var exception3 = new Exception("exception 3");
+            var exception4 = new Exception("exception 4");
+            Mock<ILogger> mockLoggerForException = MockLoggerForException(exception1, exception2, exception3, exception4);
+            mockLoggerForException.Object.LogException(exception1);
+            mockLoggerForException.Object.LogException(exception2);
+            mockLoggerForException.Object.LogException(exception3);
+            mockLoggerForException.Object.LogException(exception4);
+            mockLoggerForException.VerifyAll();
         }
     }
 }

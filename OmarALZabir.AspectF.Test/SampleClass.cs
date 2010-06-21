@@ -8,15 +8,19 @@ namespace OmarALZabir.AspectF
 {
     class SampleClass
     {
-        private ILogger logger = new Mock<ILogger>().Object;
+        static SampleClass()
+        {
+            Let.Logger = () => new SampleLogger();
+            Let.Cache = () => new SampleCache();
+        }
                 
-        public void InsertCustomerTheEasyWay(string firstName, string lastName, int age,
+        public void InsertCustomerTheAspectFWay(string firstName, string lastName, int age,
             Dictionary<string, string> attributes)
         {
-            AspectF.Define
-                .Log(logger, "Inserting customer the easy way")
-                .HowLong(logger, "Starting customer insert", "Inserted customer in {1} seconds")
-                .Retry(logger)
+            Let.Us
+                .Log("Inserting customer the easy way")
+                .HowLong("Starting customer insert", "Inserted customer in {1} seconds")
+                .Retry()
                 .Do(() =>
                     {
                         CustomerData data = new CustomerData();
@@ -24,7 +28,7 @@ namespace OmarALZabir.AspectF
                     });
         }
 
-        public bool InsertCustomer(string firstName, string lastName, int age,
+        public bool InsertCustomerTheOldFashionedWay(string firstName, string lastName, int age,
             Dictionary<string, string> attributes)
         {
             if (string.IsNullOrEmpty(firstName))
@@ -40,7 +44,7 @@ namespace OmarALZabir.AspectF
                 throw new ApplicationException("Attributes must not be null");
 
             // Log customer inserts and time the execution
-            Logger.Writer.WriteLine("Inserting customer data...");
+            SampleLogger.Writer.WriteLine("Inserting customer data...");
             DateTime start = DateTime.Now;
 
             try
@@ -49,7 +53,7 @@ namespace OmarALZabir.AspectF
                 bool result = data.Insert(firstName, lastName, age, attributes);
                 if (result == true)
                 {
-                    Logger.Writer.Write("Successfully inserted customer data in "
+                    SampleLogger.Writer.Write("Successfully inserted customer data in "
                         + (DateTime.Now - start).TotalSeconds + " seconds");
                 }
                 return result;
@@ -63,7 +67,7 @@ namespace OmarALZabir.AspectF
                     bool result = data.Insert(firstName, lastName, age, attributes);
                     if (result == true)
                     {
-                        Logger.Writer.Write("Successfully inserted customer data in "
+                        SampleLogger.Writer.Write("Successfully inserted customer data in "
                             + (DateTime.Now - start).TotalSeconds + " seconds");
                     }
                     return result;
@@ -80,12 +84,12 @@ namespace OmarALZabir.AspectF
                         string message = new string(Enumerable.Repeat('\t', indent).ToArray())
                             + current.Message;
                         Debug.WriteLine(message);
-                        Logger.Writer.WriteLine(message);
+                        SampleLogger.Writer.WriteLine(message);
                         current = current.InnerException;
                         indent++;
                     }
                     Debug.WriteLine(x.StackTrace);
-                    Logger.Writer.WriteLine(x.StackTrace);
+                    SampleLogger.Writer.WriteLine(x.StackTrace);
 
                     return false;
                 }
